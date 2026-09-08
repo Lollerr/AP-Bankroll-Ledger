@@ -1,4 +1,6 @@
-// Paste the /exec URL from the v7.1 Apps Script deployment below.
+// AP Bankroll v8.1
+// Paste the public HTTPS URL of your Cloudflare Worker below.
+// Example: https://ap-bankroll-api.your-subdomain.workers.dev
 window.AP_CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbxFLyBZA1HSM234wv8aijocbjHgFh9v9Zi4BMU6C1APpahCgtdCN9_xkFfjUoMCjrHJyg/exec'
+  API_URL: 'PASTE_CLOUDFLARE_WORKER_URL_HERE'
 };

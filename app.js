@@ -366,39 +366,30 @@ function renderScheduleCalendar(d){
 }
 
 
-function jsonp(params,timeout=15000,keyOverride=syncKey){
-  return new Promise((resolve,reject)=>{
-    const cb='apcb_'+Date.now()+'_'+Math.random().toString(36).slice(2);const s=document.createElement('script');let settled=false;
-    const timer=setTimeout(()=>done(new Error('Cloud request timed out')),timeout);
-    function done(err,data){if(settled)return;settled=true;clearTimeout(timer);try{delete window[cb]}catch(e){}s.remove();err?reject(err):resolve(data)}
-    window[cb]=data=>done(null,data);
-    const u=new URL(API);Object.entries({...params,key:keyOverride,callback:cb,_:Date.now()}).forEach(([k,v])=>u.searchParams.set(k,v));s.src=u.toString();s.async=true;s.referrerPolicy='no-referrer';s.onerror=()=>done(new Error('Cloud request failed'));document.head.appendChild(s);
-  });
-}
-function frameRequest(params,timeout=18000,keyOverride=syncKey){
-  return new Promise((resolve,reject)=>{
-    const requestId='apframe_'+Date.now()+'_'+Math.random().toString(36).slice(2);const frame=document.createElement('iframe');let settled=false;
-    frame.style.display='none';frame.setAttribute('aria-hidden','true');
-    const timer=setTimeout(()=>done(new Error('Cloud request timed out')),timeout);
-    function cleanup(){clearTimeout(timer);window.removeEventListener('message',onMessage);frame.remove()}
-    function done(err,data){if(settled)return;settled=true;cleanup();err?reject(err):resolve(data)}
-    function onMessage(ev){const d=ev.data;if(!d||d.apBankroll!==true||d.requestId!==requestId)return;done(null,d.payload)}
-    window.addEventListener('message',onMessage);
-    const u=new URL(API);Object.entries({...params,key:keyOverride,transport:'frame',requestId,_:Date.now()}).forEach(([k,v])=>u.searchParams.set(k,v));frame.src=u.toString();frame.onerror=()=>done(new Error('Cloud request failed'));document.body.appendChild(frame);
-  });
-}
-async function cloudGet(params,timeout=18000,keyOverride=syncKey){
-  // v8.0.3 uses an iframe/postMessage response first. The Apps Script frame response explicitly allows cross-origin embedding
-  // seen with cross-origin JSONP ContentService redirects. JSONP remains a compatibility fallback.
-  try{return await frameRequest(params,timeout,keyOverride)}catch(frameErr){
-    try{return await jsonp(params,timeout,keyOverride)}catch(jsonpErr){
-      throw new Error('Cloud request failed (frame: '+(frameErr?.message||'failed')+'; JSONP: '+(jsonpErr?.message||'failed')+')');
-    }
-  }
+async function cloudRequest(path,{method='GET',body=null,timeout=18000,keyOverride=syncKey}={}){
+  if(!endpointConfigured()) throw new Error('Cloud API is not configured');
+  if(!keyOverride) throw new Error('Private sync key is missing');
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeout);
+  try{
+    const base=API.replace(/\/+$/,'');
+    const opts={method,mode:'cors',cache:'no-store',redirect:'follow',signal:controller.signal,headers:{'Authorization':'Bearer '+keyOverride,'Accept':'application/json'}};
+    if(body!==null){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}
+    const resp=await fetch(base+path,opts);
+    let data=null;
+    try{data=await resp.json()}catch(e){throw new Error('Cloud API returned an unreadable response (HTTP '+resp.status+')')}
+    if(resp.status===401||data?.error==='UNAUTHORIZED') throw new Error('Private sync key was rejected');
+    if(!resp.ok) throw new Error(data?.error||('Cloud API request failed (HTTP '+resp.status+')'));
+    return data;
+  }catch(err){
+    if(err?.name==='AbortError') throw new Error('Cloud request timed out');
+    if(err instanceof TypeError) throw new Error('Cloud API could not be reached');
+    throw err;
+  }finally{clearTimeout(timer)}
 }
 async function bootstrapRemote(keyOverride=syncKey){
   if(!endpointConfigured()||!keyOverride||!navigator.onLine) return false;
-  const data=await cloudGet({action:'bootstrap'},18000,keyOverride);
+  const data=await cloudRequest('/bootstrap',{keyOverride,timeout:30000});
   if(!data?.ok){
     if(data?.error==='UNAUTHORIZED') throw new Error('Private sync key was rejected');
     throw new Error(data?.error?('Bootstrap failed: '+data.error):'Bootstrap failed');
@@ -413,17 +404,9 @@ async function bootstrapRemote(keyOverride=syncKey){
   }
   populateCasinos();render();return true;
 }
-async function pollAck(ids){
-  const waits=[500,1200,2500,4000,7000];
-  for(const wait of waits){
-    await new Promise(r=>setTimeout(r,wait));
-    try{const a=await cloudGet({action:'ack',ids:ids.join(',')},15000);if(a?.acked?.length) return a.acked}catch(e){}
-  }
-  return [];
-}
 async function syncNow(manual=false){
   if(syncRunning) return;
-  if(!endpointConfigured()){if(manual)setStatus('Set the Apps Script /exec URL in config.js first.');return}
+  if(!endpointConfigured()){if(manual)setStatus('Set the Cloudflare Worker URL in config.js first.');return}
   if(!syncKey){if(manual)setStatus('Save the private sync key on this device first.');render();return}
   if(!navigator.onLine){if(manual)setStatus('Offline. Entries are safe locally and will sync when service returns.');render();return}
   syncRunning=true;
@@ -431,11 +414,16 @@ async function syncNow(manual=false){
     await refreshEvents();
     let unsynced=pending();
     while(unsynced.length){
-      const batch=unsynced.slice(0,20),ids=batch.map(e=>e.id);
-      await fetch(API,{method:'POST',mode:'no-cors',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'sync',syncKey,events:batch})});
-      const acked=await pollAck(ids);
-      if(!acked.length) break;
-      await markSynced(acked);unsynced=pending();
+      const batch=unsynced.slice(0,20);
+      const result=await cloudRequest('/sync',{method:'POST',body:{action:'sync',events:batch},timeout:45000});
+      const acked=Array.isArray(result?.acked)?result.acked:[];
+      if(acked.length) await markSynced(acked);
+      if(Array.isArray(result?.errors)&&result.errors.length){
+        const first=result.errors[0];
+        throw new Error('Server rejected an entry'+(first?.error?': '+first.error:''));
+      }
+      if(!acked.length) throw new Error('Cloud API did not acknowledge the pending entries');
+      unsynced=pending();
     }
     await bootstrapRemote();
     await deleteSynced();
@@ -448,9 +436,8 @@ async function syncNow(manual=false){
   }finally{syncRunning=false;render()}
 }
 
-
 async function init(){
   if('serviceWorker'in navigator){try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!sessionStorage.getItem('ap-sw-reloaded')){sessionStorage.setItem('ap-sw-reloaded','1');location.reload()}})}catch(e){}}db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();bootstrapReady=!!baseline.syncAt;localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();setEntryView('session');showPage('home');render();
-  if(configured()&&navigator.onLine)await syncNow(false);else if(!endpointConfigured())setStatus('Local mode ready. Configure the sync URL.');else if(!syncKey)setStatus('Ledger data unavailable — enter and verify the private sync key in More.');else if(!bootstrapReady)setStatus('Ledger data unavailable — sync required.');window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});setInterval(()=>{if(!document.hidden)syncNow(false)},20000)
+  if(configured()&&navigator.onLine)await syncNow(false);else if(!endpointConfigured())setStatus('Local mode ready. Configure the Cloudflare Worker URL.');else if(!syncKey)setStatus('Ledger data unavailable — enter and verify the private sync key in More.');else if(!bootstrapReady)setStatus('Ledger data unavailable — sync required.');window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});setInterval(()=>{if(!document.hidden)syncNow(false)},20000)
 }
 init().catch(e=>setStatus('Startup error: '+e.message));
