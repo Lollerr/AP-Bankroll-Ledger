@@ -3,7 +3,7 @@ const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NO
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
 let actionLocked=false,syncRunning=false;
-let currentPage='ledger',scheduleView='date';
+let currentPage='home',scheduleView='date',entryView='session',reportView='overview';
 
 const $=id=>document.getElementById(id);
 const money=n=>'$'+Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -12,7 +12,7 @@ const endpointConfigured=()=>/^https:\/\//.test(API)&&!API.includes('PASTE_');
 const configured=()=>endpointConfigured()&&!!syncKey;
 
 
-// v7.6 casino brand icon set used by Schedule views. Inline SVG keeps the icon library fast and available offline.
+// v8.0 raster casino icon library used by Schedule views; precached for offline use.
 function casinoKey(location){
   const s=String(location||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ');
   if(s.includes('horseshoe')||s.includes('caesars')) return 'caesars';
@@ -70,7 +70,7 @@ async function refreshEvents(){eventsCache=await reqP(store('events').getAll());
 async function markSynced(ids){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const id of ids){const ev=await reqP(s.get(id));if(ev){ev.synced=true;ev.syncedAt=Date.now();s.put(ev)}}await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 async function deleteSynced(){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const ev of eventsCache) if(ev.synced) s.delete(ev.id);await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 
-function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},scheduleData:{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]},lastReload:null,recent:[]}}
+function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},scheduleData:{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]},reports:{sessions:[],freePlay:[],payments:[],reconciliations:[],corrections:[],scheduleSnapshots:[]},lastReload:null,recent:[]}}
 function defaultState(){return {active:null,lastReload:null}}
 function uuid(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}
 function event(type,payload){return {id:uuid(),type,ts:new Date().toISOString(),createdAt:Date.now(),deviceId,payload,synced:false}}
@@ -264,50 +264,48 @@ async function saveCorrection(){
   },'Correction recorded');
 }
 
+
 function populateCasinos(){
   const list=[...new Set([...(baseline.casinos||[]),...DEFAULT_CASINOS])].filter(Boolean).sort();
-  for(const id of ['casinoSelect','fpCasinoSelect','corrSessionCasino','corrFpCasino']){
-    const el=$(id),old=el.value;el.innerHTML='';for(const c of list) el.add(new Option(c,c));if(list.includes(old)) el.value=old;
-  }
+  for(const id of ['casinoSelect','fpCasinoSelect','corrSessionCasino','corrFpCasino']){const el=$(id);if(!el)continue;const old=el.value;el.innerHTML='';for(const c of list)el.add(new Option(c,c));if(list.includes(old))el.value=old}
 }
 function render(){
-  const v=viewData(),a=localState.active;
-  $('newSession').hidden=!!a;$('activeSession').hidden=!a;
-  if(a){$('activeCasino').textContent=a.casino;$('activePlayer').textContent='Player / Card: '+a.playerName;const lr=localState.lastReload;$('lastReload').textContent=lr?money(lr.amount).replace('.00','')+' at '+new Date(lr.ts).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'}):'None yet'}
-  const sched=baseline.schedule||{};
-  $('fpPayable').textContent=money(v.fpPayable);
-  $('fpActualCash').textContent=money(v.fpCash);
-  $('fpScheduledTotal').textContent=sched.ok?money(sched.totalOffers):'—';
-  $('fpScheduledPay').textContent=sched.ok?money(sched.offerPay):'—';
-  $('fpMonthLabel').textContent=(sched.monthLabel||'CURRENT MONTH').toUpperCase();
-  $('fpPayDetail').textContent=money(v.fpEarned)+' earned · '+money(v.fpPaid)+' paid';
-  $('fpScheduleDetail').textContent=sched.ok?('Rusty schedule · '+(sched.unknownCount?String(sched.unknownCount)+' unknown FP offer'+(sched.unknownCount===1?'':'s')+' excluded':'all listed FP amounts known')):'Rusty schedule total unavailable until the next successful sync.';
-  $('settleBtn').disabled=actionLocked||v.fpPayable<=0;
-  $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'okText':'badText');
-  $('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
-  const online=navigator.onLine, p=v.pending;
-  const badge=$('syncBadge');
-  if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP NEEDED'}
-  else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}
-  else {badge.className='badge '+(!online?'warn':p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
-  const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';
-  $('backupDetail').textContent=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required before Google backup can run.':p?`${p} local entr${p===1?'y':'ies'} awaiting Google backup · Last cloud sync ${last}`:`All local entries backed up · Last cloud sync ${last}`;
-  $('keyDetail').textContent=syncKey?'Private sync key is stored only on this device.':'No private sync key saved on this device.';
-  renderCorrectionPicker();
-  if(currentPage==='schedule') renderSchedule();
+  const v=viewData(),a=localState.active,sched=baseline.schedule||{};
+  if($('newSession'))$('newSession').hidden=!!a;if($('activeSession'))$('activeSession').hidden=!a;
+  if(a){$('activeCasino').textContent=a.casino;$('activePlayer').textContent='Player / Card: '+a.playerName;const lr=localState.lastReload;$('lastReload').textContent=lr?money(lr.amount).replace('.00','')+' at '+new Date(lr.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None yet'}
+  $('homeExpected').textContent=money(v.expected);$('homePhysical').textContent=money(v.physical);$('homeVariance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('homeVariance').className=v.variance===0?'good':'bad';
+  $('homeFpPayable').textContent=money(v.fpPayable);$('homeFpCash').textContent=money(v.fpCash);$('homeScheduled').textContent=sched.ok?money0(sched.totalOffers):'—';$('homeScheduledPay').textContent=sched.ok?money(sched.offerPay):'—';
+  $('homeActive').hidden=!a;if(a){$('homeActiveCasino').textContent=a.casino;$('homeActivePlayer').textContent=a.playerName;$('homeDeployed').textContent=money0(a.totalDeployed);$('homeReloads').textContent=money0(a.reloads);$('homeLastReload').textContent=localState.lastReload?new Date(localState.lastReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
+  $('fpPayable').textContent=money(v.fpPayable);$('fpPayDetail').textContent=money(v.fpEarned)+' earned · '+money(v.fpPaid)+' paid';$('settleBtn').disabled=actionLocked||v.fpPayable<=0;
+  $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'good':'bad');$('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
+  const online=navigator.onLine,p=v.pending,badge=$('syncBadge');if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP'}else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}else{badge.className='badge '+(!online||p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
+  const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';const backup=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required.':p?`${p} local entr${p===1?'y':'ies'} awaiting backup · Last sync ${last}`:`All local entries backed up · Last sync ${last}`;$('backupDetail').textContent=backup;$('homeBackup').textContent=backup;$('keyDetail').textContent=syncKey?'Private sync key is stored only on this device.':'No private sync key saved on this device.';
+  renderCorrectionPicker();if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();
 }
-
-
 function esc(v){return String(v??'').replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
 function money0(n){return '$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0})}
-function initials(name){const parts=String(name||'?').trim().split(/\s+/).filter(Boolean);return (parts.length>1?(parts[0][0]+parts[1][0]):parts[0]?.slice(0,2)||'?').toUpperCase()}
-function showPage(page){
-  currentPage=page==='schedule'?'schedule':'ledger';
-  $('pageLedger').hidden=currentPage!=='ledger';$('pageSchedule').hidden=currentPage!=='schedule';
-  $('tabLedger').classList.toggle('active',currentPage==='ledger');$('tabSchedule').classList.toggle('active',currentPage==='schedule');
-  if(currentPage==='schedule') renderSchedule();
-  window.scrollTo({top:0,behavior:'instant'});
-}
+function initials(name){const parts=String(name||'?').trim().split(/\s+/).filter(Boolean);return(parts.length>1?(parts[0][0]+parts[1][0]):parts[0]?.slice(0,2)||'?').toUpperCase()}
+function showPage(page){currentPage=['home','schedule','add','reports','more'].includes(page)?page:'home';for(const p of ['Home','Schedule','Add','Reports','More'])$('page'+p).hidden=currentPage!==p.toLowerCase();for(const p of ['Home','Schedule','Add','Reports','More'])$('nav'+p).classList.toggle('active',currentPage===p.toLowerCase());if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();window.scrollTo({top:0,behavior:'instant'})}
+function goAdd(view){showPage('add');setEntryView(view)}
+function setEntryView(view){entryView=['session','freeplay','reconcile'].includes(view)?view:'session';$('entrySession').hidden=entryView!=='session';$('entryFreeplay').hidden=entryView!=='freeplay';$('entryReconcile').hidden=entryView!=='reconcile';$('entrySessionTab').classList.toggle('active',entryView==='session');$('entryFpTab').classList.toggle('active',entryView==='freeplay');$('entryReconTab').classList.toggle('active',entryView==='reconcile')}
+function setReportView(view){reportView=['overview','casino','fp','audit'].includes(view)?view:'overview';for(const x of ['Overview','Casino','Fp','Audit'])$('report'+x+'Tab').classList.toggle('active',reportView===x.toLowerCase());renderReports()}
+function reportData(){return baseline.reports||{sessions:[],freePlay:[],payments:[],reconciliations:[],corrections:[],scheduleSnapshots:[]}}
+function dateOf(x){const d=new Date(x);return isNaN(d)?null:d}
+function reportFiltered(){const r=reportData(),mode=$('reportPeriod')?.value||'month',now=new Date();let start=null;if(mode==='month')start=new Date(now.getFullYear(),now.getMonth(),1);else if(mode==='30')start=new Date(now.getTime()-30*864e5);else if(mode==='ytd')start=new Date(now.getFullYear(),0,1);const keep=x=>!start||((dateOf(x.ts||x.date||x.timestamp)||new Date(0))>=start);return {...r,sessions:(r.sessions||[]).filter(keep),freePlay:(r.freePlay||[]).filter(keep),payments:(r.payments||[]).filter(keep),reconciliations:(r.reconciliations||[]).filter(keep),corrections:(r.corrections||[]).filter(keep)}}
+function sum(a,f){return round2(a.reduce((s,x)=>s+(Number(f(x))||0),0))}
+function groupBy(a,key){const m={};for(const x of a){const k=key(x)||'Unknown';(m[k]||(m[k]=[])).push(x)}return m}
+function monthKey(ts){const d=dateOf(ts);return d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`:''}
+function chartSvg(points){if(points.length<2)return '<div class="sub">Not enough history yet.</div>';const vals=points.map(x=>x.v),mn=Math.min(...vals),mx=Math.max(...vals),rng=Math.max(1,mx-mn);const coords=points.map((x,i)=>`${(i/(points.length-1))*100},${95-((x.v-mn)/rng)*80}`).join(' ');return `<svg class="trend" viewBox="0 0 100 100" preserveAspectRatio="none"><line class="axis" x1="0" y1="95" x2="100" y2="95"/><polyline points="${coords}"/></svg><div class="sub">${money(mn)} low · ${money(mx)} high</div>`}
+function renderReports(){if(!$('reportsContent'))return;const r=reportFiltered(),sessions=(r.sessions||[]).filter(x=>x.status==='CLOSED'),fp=r.freePlay||[];const net=sum(sessions,x=>x.net),deployed=sum(sessions,x=>x.totalDeployed),wins=sessions.filter(x=>Number(x.net)>0),losses=sessions.filter(x=>Number(x.net)<0),fpFace=sum(fp,x=>x.faceValue),fpCash=sum(fp,x=>x.cashOut),conv=fpFace?fpCash/fpFace:0;
+ let html='';if(reportView==='overview'){const best=sessions.length?Math.max(...sessions.map(x=>Number(x.net)||0)):0,worst=sessions.length?Math.min(...sessions.map(x=>Number(x.net)||0)):0;html=`<div class="report-kpis"><div class="report-kpi"><span>NET AP P/L</span><b class="${net>=0?'good':'bad'}">${money(net)}</b></div><div class="report-kpi"><span>SESSIONS</span><b>${sessions.length}</b></div><div class="report-kpi"><span>WIN RATE</span><b>${sessions.length?(wins.length/sessions.length*100).toFixed(1):'0.0'}%</b></div><div class="report-kpi"><span>FP CASH</span><b>${money(fpCash)}</b></div></div><section class="report-card"><h3>Session Analytics</h3><table class="data-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total deployed</td><td>${money(deployed)}</td></tr><tr><td>P/L per $1,000 deployed</td><td>${deployed?money(net/deployed*1000):'$0.00'}</td></tr><tr><td>Average session</td><td>${sessions.length?money(net/sessions.length):'$0.00'}</td></tr><tr><td>Best session</td><td class="good">${money(best)}</td></tr><tr><td>Worst session</td><td class="bad">${money(worst)}</td></tr><tr><td>Winning / losing</td><td>${wins.length} / ${losses.length}</td></tr></table></section>`;
+ const months=groupBy(sessions,x=>monthKey(x.ts||x.date));const fpMonths=groupBy(fp,x=>monthKey(x.ts));const keys=[...new Set([...Object.keys(months),...Object.keys(fpMonths)])].filter(Boolean).sort().reverse();html+=`<section class="report-card"><h3>Monthly Summary</h3><table class="data-table"><tr><th>Month</th><th>AP P/L</th><th>FP Cash</th><th>Combined</th></tr>${keys.map(k=>{const p=sum(months[k]||[],x=>x.net),f=sum(fpMonths[k]||[],x=>x.cashOut);return `<tr><td>${k}</td><td class="${p>=0?'good':'bad'}">${money(p)}</td><td>${money(f)}</td><td>${money(p+f)}</td></tr>`}).join('')||'<tr><td colspan="4">No data</td></tr>'}</table></section>`;
+ const pts=(r.reconciliations||[]).map(x=>({v:Number(x.expected)||0}));html+=`<section class="report-card"><h3>Bankroll History</h3>${chartSvg(pts)}</section>`}
+ else if(reportView==='casino'){const g=groupBy(sessions,x=>x.casino),rows=Object.entries(g).map(([k,a])=>({k,n:a.length,net:sum(a,x=>x.net),dep:sum(a,x=>x.totalDeployed),wins:a.filter(x=>x.net>0).length})).sort((a,b)=>b.net-a.net);const max=Math.max(1,...rows.map(x=>Math.abs(x.net)));html=`<section class="report-card"><h3>Casino Performance</h3>${rows.map(x=>`<div class="bar-row"><span>${esc(x.k)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(2,Math.abs(x.net)/max*100)}%"></div></div><b class="${x.net>=0?'good':'bad'}">${money(x.net)}</b></div>`).join('')||'<div class="sub">No sessions in period.</div>'}</section><section class="report-card"><table class="data-table"><tr><th>Casino</th><th>Sessions</th><th>Win%</th><th>Deployed</th><th>ROI</th></tr>${rows.map(x=>`<tr><td>${esc(x.k)}</td><td>${x.n}</td><td>${(x.wins/x.n*100).toFixed(0)}%</td><td>${money0(x.dep)}</td><td>${x.dep?(x.net/x.dep*100).toFixed(1):'0'}%</td></tr>`).join('')}</table></section>`;const pg=groupBy(sessions,x=>x.playerName);const pr=Object.entries(pg).map(([k,a])=>({k,n:a.length,net:sum(a,x=>x.net)})).sort((a,b)=>b.net-a.net);html+=`<section class="report-card"><h3>Player / Card Performance</h3><table class="data-table"><tr><th>Player / Card</th><th>Sessions</th><th>P/L</th></tr>${pr.map(x=>`<tr><td>${esc(x.k)}</td><td>${x.n}</td><td class="${x.net>=0?'good':'bad'}">${money(x.net)}</td></tr>`).join('')}</table></section>`}
+ else if(reportView==='fp'){const earned=round2(fpCash*.15),payments=sum(r.payments||[],x=>x.amount),payable=Math.max(0,round2(earned-payments));html=`<div class="report-kpis"><div class="report-kpi"><span>FACE VALUE</span><b>${money(fpFace)}</b></div><div class="report-kpi"><span>ACTUAL CASH</span><b>${money(fpCash)}</b></div><div class="report-kpi"><span>CONVERSION</span><b>${(conv*100).toFixed(1)}%</b></div><div class="report-kpi"><span>15% EARNED</span><b>${money(earned)}</b></div></div>`;const fg=groupBy(fp,x=>x.casino),rows=Object.entries(fg).map(([k,a])=>({k,face:sum(a,x=>x.faceValue),cash:sum(a,x=>x.cashOut)})).sort((a,b)=>b.cash-a.cash);html+=`<section class="report-card"><h3>Free Play by Casino</h3><table class="data-table"><tr><th>Casino</th><th>Face</th><th>Cash</th><th>Conv.</th></tr>${rows.map(x=>`<tr><td>${esc(x.k)}</td><td>${money0(x.face)}</td><td>${money0(x.cash)}</td><td>${x.face?(x.cash/x.face*100).toFixed(1):0}%</td></tr>`).join('')}</table></section>`;
+ const snaps=r.scheduleSnapshots||[],snapMonths=groupBy(snaps,x=>x.monthKey),colMonths=groupBy(fp,x=>monthKey(x.ts));const mk=[...new Set([...Object.keys(snapMonths),...Object.keys(colMonths)])].filter(Boolean).sort().reverse();html+=`<section class="report-card"><h3>Schedule vs Collection</h3><table class="data-table"><tr><th>Month</th><th>Scheduled</th><th>Collected Face</th><th>Progress</th></tr>${mk.map(k=>{const s=sum(snaps[k]||[],x=>x.amount),c=sum(colMonths[k]||[],x=>x.faceValue);return `<tr><td>${k}</td><td>${money0(s)}</td><td>${money0(c)}</td><td>${s?Math.min(999,c/s*100).toFixed(1):'—'}%</td></tr>`}).join('')||'<tr><td colspan="4">Schedule snapshots begin with v8.0.</td></tr>'}</table><div class="sub">Progress compares scheduled known face value with recorded free-play face value. Unknown schedule amounts are excluded.</div></section><section class="report-card"><h3>15% Pay History</h3><div class="sub">Earned ${money(earned)} · Paid ${money(payments)} · Current calculated balance ${money(payable)}</div><table class="data-table"><tr><th>Date</th><th>Payment</th><th>Note</th></tr>${(r.payments||[]).slice().reverse().map(x=>`<tr><td>${esc((x.ts||'').slice(0,10))}</td><td>${money(x.amount)}</td><td>${esc(x.note||'')}</td></tr>`).join('')||'<tr><td colspan="3">No payments in period.</td></tr>'}</table></section>`}
+ else{const corrections=r.corrections||[],recs=r.reconciliations||[],largeLosses=sessions.filter(x=>Number(x.net)<=-1000).sort((a,b)=>a.net-b.net),highReload=sessions.filter(x=>Number(x.reloads)>=2000).sort((a,b)=>b.reloads-a.reloads);html=`<div class="report-kpis"><div class="report-kpi"><span>CORRECTIONS</span><b>${corrections.length}</b></div><div class="report-kpi"><span>RECON CHECKS</span><b>${recs.length}</b></div><div class="report-kpi"><span>LOSSES ≤ -$1K</span><b>${largeLosses.length}</b></div><div class="report-kpi"><span>RELOADS ≥ $2K</span><b>${highReload.length}</b></div></div><section class="report-card"><h3>Exceptions / Audit</h3>${largeLosses.slice(0,10).map(x=>`<div class="audit-item"><b class="bad">${money(x.net)}</b> · ${esc(x.casino)}<div class="sub">${esc(x.playerName)} · deployed ${money(x.totalDeployed)}</div></div>`).join('')}${highReload.slice(0,10).map(x=>`<div class="audit-item"><b>${money(x.reloads)} reloads</b> · ${esc(x.casino)}<div class="sub">${esc(x.playerName)}</div></div>`).join('')||'<div class="sub">No flagged exceptions in this period.</div>'}</section><section class="report-card"><h3>Reconciliation History</h3><table class="data-table"><tr><th>Date</th><th>Expected</th><th>Physical</th><th>Variance</th></tr>${recs.slice().reverse().map(x=>`<tr><td>${esc((x.ts||'').slice(0,10))}</td><td>${money(x.expected)}</td><td>${money(x.physical)}</td><td class="${Math.abs(x.variance)<.01?'good':'bad'}">${money(x.variance)}</td></tr>`).join('')||'<tr><td colspan="4">History begins with v8.0 reconciliations.</td></tr>'}</table></section><section class="report-card"><h3>Correction Log</h3>${corrections.slice().reverse().slice(0,30).map(x=>`<div class="audit-item"><b>${esc(x.field)}</b>: ${esc(x.original)} → ${esc(x.corrected)}<div class="sub">${esc((x.ts||'').slice(0,10))} · ${esc(x.targetType)} · ${esc(x.reason||'No reason')}</div></div>`).join('')||'<div class="sub">No corrections in this period.</div>'}</section>`}
+ $('reportsContent').innerHTML=html}
+
 function setScheduleView(view){scheduleView=['date','casino','calendar'].includes(view)?view:'date';renderSchedule()}
 function scheduleData(){return baseline.scheduleData||{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]}}
 function renderSchedule(){
@@ -353,6 +351,7 @@ function renderScheduleCalendar(d){
   for(let day=1;day<=days;day++){const key=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,x=by[key];const icons=x?(x.locations||[]).slice(0,3).map(v=>casinoIconSvg(v,true)).join(''):'';const more=x&&x.locations.length>3?`<span class="cal-more">+${x.locations.length-3}</span>`:'';html+=`<div class="cal-day"><div class="cal-date">${day}</div>${x?`<div class="cal-icons">${icons}${more}</div><div class="cal-total">${money0(x.total)}</div><div class="cal-count">${x.count} offer${x.count===1?'':'s'}${x.unknown?` · ${x.unknown} IDK`:''}</div>`:''}</div>`}
   html+='</div>';$('scheduleContent').innerHTML=html;
 }
+
 
 function jsonp(params,timeout=15000){
   return new Promise((resolve,reject)=>{
@@ -406,15 +405,9 @@ async function syncNow(manual=false){
   }catch(err){if(manual)setStatus('Sync failed; local data is intact: '+err.message)}finally{syncRunning=false;render()}
 }
 
+
 async function init(){
-  if('serviceWorker'in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
-  db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';
-  baseline=await metaGet('baseline')||defaultBaseline();localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();render();
-  if(configured()&&navigator.onLine){try{await bootstrapRemote()}catch(e){setStatus('Cloud unavailable; local mode is ready.')}syncNow(false)}
-  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.6 sync URL before deployment.');
-  else if(!syncKey) setStatus('Local mode ready. Enter the private sync key to enable Google backup.');
-  window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});
-  setInterval(()=>{if(!document.hidden)syncNow(false)},20000);
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();setEntryView('session');showPage('home');render();
+  if(configured()&&navigator.onLine){try{await bootstrapRemote()}catch(e){setStatus('Cloud unavailable; local mode is ready.')}syncNow(false)}else if(!endpointConfigured())setStatus('Local mode ready. Configure the sync URL.');else if(!syncKey)setStatus('Local mode ready. Enter the private sync key to enable Google backup.');window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});setInterval(()=>{if(!document.hidden)syncNow(false)},20000)
 }
 init().catch(e=>setStatus('Startup error: '+e.message));
