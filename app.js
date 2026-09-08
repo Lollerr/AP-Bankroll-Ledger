@@ -3,6 +3,7 @@ const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NO
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
 let actionLocked=false,syncRunning=false;
+let bootstrapReady=false,cloudError='';
 let currentPage='home',scheduleView='date',entryView='session',reportView='overview';
 
 const $=id=>document.getElementById(id);
@@ -109,8 +110,19 @@ async function saveState(){await metaSet('localState',localState)}
 async function saveSyncKey(){
   const raw=$('syncKeyInput').value.trim();
   if(raw.length<32){setStatus('Sync key looks too short. Paste the full private key.');return}
-  syncKey=raw;await metaSet('syncKey',syncKey);$('syncKeyInput').value='';render();setStatus('Private sync key saved on this iPhone.');
-  if(navigator.onLine) syncNow(true);
+  if(!endpointConfigured()){setStatus('Cloud endpoint is not configured.');return}
+  if(!navigator.onLine){setStatus('Connect to the internet before saving or changing the private sync key so it can be verified.');return}
+  if(syncRunning){setStatus('A sync is already in progress. Try again in a moment.');return}
+  syncRunning=true;cloudError='';setStatus('Verifying private sync key…');render();
+  const previousKey=syncKey;
+  try{
+    await bootstrapRemote(raw);
+    syncKey=raw;await metaSet('syncKey',syncKey);$('syncKeyInput').value='';
+    setStatus('Private sync key verified and saved on this device. Google ledger data loaded successfully.');
+  }catch(err){
+    syncKey=previousKey;cloudError=err.message||'Private sync key verification failed';
+    setStatus(cloudError==='Private sync key was rejected'?'Private sync key rejected. Nothing was changed on this device.':'Key verification failed: '+cloudError);
+  }finally{syncRunning=false;render()}
 }
 async function clearSyncKey(){
   if(!syncKey){setStatus('No sync key is stored on this device.');return}
@@ -273,13 +285,14 @@ function render(){
   const v=viewData(),a=localState.active,sched=baseline.schedule||{};
   if($('newSession'))$('newSession').hidden=!!a;if($('activeSession'))$('activeSession').hidden=!a;
   if(a){$('activeCasino').textContent=a.casino;$('activePlayer').textContent='Player / Card: '+a.playerName;const lr=localState.lastReload;$('lastReload').textContent=lr?money(lr.amount).replace('.00','')+' at '+new Date(lr.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None yet'}
-  $('homeExpected').textContent=money(v.expected);$('homePhysical').textContent=money(v.physical);$('homeVariance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('homeVariance').className=v.variance===0?'good':'bad';
-  $('homeFpPayable').textContent=money(v.fpPayable);$('homeFpCash').textContent=money(v.fpCash);$('homeScheduled').textContent=sched.ok?money0(sched.totalOffers):'—';$('homeScheduledPay').textContent=sched.ok?money(sched.offerPay):'—';
+  const cloudLoaded=bootstrapReady||!!baseline.syncAt;
+  $('homeExpected').textContent=cloudLoaded?money(v.expected):'—';$('homePhysical').textContent=cloudLoaded?money(v.physical):'—';$('homeVariance').textContent=cloudLoaded?((v.variance<0?'−':'')+money(Math.abs(v.variance))):'—';$('homeVariance').className=cloudLoaded?(v.variance===0?'good':'bad'):'';
+  $('homeFpPayable').textContent=cloudLoaded?money(v.fpPayable):'—';$('homeFpCash').textContent=cloudLoaded?money(v.fpCash):'—';$('homeScheduled').textContent=cloudLoaded&&sched.ok?money0(sched.totalOffers):'—';$('homeScheduledPay').textContent=cloudLoaded&&sched.ok?money(sched.offerPay):'—';
   $('homeActive').hidden=!a;if(a){$('homeActiveCasino').textContent=a.casino;$('homeActivePlayer').textContent=a.playerName;$('homeDeployed').textContent=money0(a.totalDeployed);$('homeReloads').textContent=money0(a.reloads);$('homeLastReload').textContent=localState.lastReload?new Date(localState.lastReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
-  $('fpPayable').textContent=money(v.fpPayable);$('fpPayDetail').textContent=money(v.fpEarned)+' earned · '+money(v.fpPaid)+' paid';$('settleBtn').disabled=actionLocked||v.fpPayable<=0;
+  $('fpPayable').textContent=money(v.fpPayable);$('fpPayDetail').textContent=money(v.fpEarned)+' earned · '+money(v.fpPaid)+' paid';$('settleBtn').disabled=actionLocked||!cloudLoaded||v.fpPayable<=0;
   $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'good':'bad');$('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
-  const online=navigator.onLine,p=v.pending,badge=$('syncBadge');if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP'}else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}else{badge.className='badge '+(!online||p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
-  const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';const backup=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required.':p?`${p} local entr${p===1?'y':'ies'} awaiting backup · Last sync ${last}`:`All local entries backed up · Last sync ${last}`;$('backupDetail').textContent=backup;$('homeBackup').textContent=backup;$('keyDetail').textContent=syncKey?'Private sync key is stored only on this device.':'No private sync key saved on this device.';
+  const online=navigator.onLine,p=v.pending,badge=$('syncBadge');if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP'}else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}else if(cloudError&&!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC ERROR'}else if(!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC NEEDED'}else{badge.className='badge '+(!online||p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
+  const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';const backup=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required.':!cloudLoaded?(cloudError?`Ledger data unavailable — ${cloudError}.`:'Ledger data unavailable — sync required.'):p?`${p} local entr${p===1?'y':'ies'} awaiting backup · Last sync ${last}`:`All local entries backed up · Last sync ${last}`;$('backupDetail').textContent=backup;$('homeBackup').textContent=backup;$('keyDetail').textContent=syncKey?(cloudLoaded?'Private sync key verified on this device.':'A private sync key is stored, but it has not successfully loaded the ledger yet.'):'No private sync key saved on this device.';
   renderCorrectionPicker();if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();
 }
 function esc(v){return String(v??'').replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
@@ -353,20 +366,24 @@ function renderScheduleCalendar(d){
 }
 
 
-function jsonp(params,timeout=15000){
+function jsonp(params,timeout=15000,keyOverride=syncKey){
   return new Promise((resolve,reject)=>{
     const cb='apcb_'+Date.now()+'_'+Math.random().toString(36).slice(2);const s=document.createElement('script');
     const timer=setTimeout(()=>done(new Error('Cloud request timed out')),timeout);
     function done(err,data){clearTimeout(timer);try{delete window[cb]}catch(e){}s.remove();err?reject(err):resolve(data)}
     window[cb]=data=>done(null,data);
-    const u=new URL(API);Object.entries({...params,key:syncKey,callback:cb}).forEach(([k,v])=>u.searchParams.set(k,v));s.src=u.toString();s.onerror=()=>done(new Error('Cloud request failed'));document.head.appendChild(s);
+    const u=new URL(API);Object.entries({...params,key:keyOverride,callback:cb}).forEach(([k,v])=>u.searchParams.set(k,v));s.src=u.toString();s.onerror=()=>done(new Error('Cloud request failed'));document.head.appendChild(s);
   });
 }
-async function bootstrapRemote(){
-  if(!configured()||!navigator.onLine) return false;
-  const data=await jsonp({action:'bootstrap'});
-  if(!data?.ok){if(data?.error==='UNAUTHORIZED') throw new Error('Private sync key was rejected');throw new Error('Bootstrap failed')}
+async function bootstrapRemote(keyOverride=syncKey){
+  if(!endpointConfigured()||!keyOverride||!navigator.onLine) return false;
+  const data=await jsonp({action:'bootstrap'},15000,keyOverride);
+  if(!data?.ok){
+    if(data?.error==='UNAUTHORIZED') throw new Error('Private sync key was rejected');
+    throw new Error(data?.error?('Bootstrap failed: '+data.error):'Bootstrap failed');
+  }
   baseline={...defaultBaseline(),...data,syncAt:Date.now()};delete baseline.ok;delete baseline.serverTime;
+  bootstrapReady=true;cloudError='';
   await metaSet('baseline',baseline);
   if(pending().length===0){
     if(data.state?.session) localState={active:{sessionId:data.state.session,casino:data.state.casino,playerName:data.state.playerName,initial:Number(data.state.initial)||0,reloads:Number(data.state.reloads)||0,totalDeployed:Number(data.state.totalDeployed)||0},lastReload:data.lastReload||null};
@@ -399,15 +416,20 @@ async function syncNow(manual=false){
       if(!acked.length) break;
       await markSynced(acked);unsynced=pending();
     }
-    try{await bootstrapRemote();await deleteSynced()}catch(e){}
+    await bootstrapRemote();
+    await deleteSynced();
     render();
-    if(manual)setStatus(pending().length?'Some entries are still awaiting backup.':'Google backup is current.');
-  }catch(err){if(manual)setStatus('Sync failed; local data is intact: '+err.message)}finally{syncRunning=false;render()}
+    if(manual)setStatus(pending().length?'Some entries are still awaiting backup.':'Google backup is current and ledger data is loaded.');
+  }catch(err){
+    cloudError=err.message||'Cloud sync failed';
+    if(manual)setStatus('Sync failed; local data is intact: '+cloudError);
+    else setStatus(cloudError==='Private sync key was rejected'?'Private sync key rejected. Open More → Sync Security and enter the correct key.':'Cloud sync unavailable; local entries remain safe. '+cloudError);
+  }finally{syncRunning=false;render()}
 }
 
 
 async function init(){
-  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();setEntryView('session');showPage('home');render();
-  if(configured()&&navigator.onLine){try{await bootstrapRemote()}catch(e){setStatus('Cloud unavailable; local mode is ready.')}syncNow(false)}else if(!endpointConfigured())setStatus('Local mode ready. Configure the sync URL.');else if(!syncKey)setStatus('Local mode ready. Enter the private sync key to enable Google backup.');window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});setInterval(()=>{if(!document.hidden)syncNow(false)},20000)
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();bootstrapReady=!!baseline.syncAt;localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();setEntryView('session');showPage('home');render();
+  if(configured()&&navigator.onLine)await syncNow(false);else if(!endpointConfigured())setStatus('Local mode ready. Configure the sync URL.');else if(!syncKey)setStatus('Ledger data unavailable — enter and verify the private sync key in More.');else if(!bootstrapReady)setStatus('Ledger data unavailable — sync required.');window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});setInterval(()=>{if(!document.hidden)syncNow(false)},20000)
 }
 init().catch(e=>setStatus('Startup error: '+e.message));
