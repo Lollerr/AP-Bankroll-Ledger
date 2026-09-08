@@ -28,3 +28,6 @@
 .casino-harrahs{color:#d98cff}
 .casino-southland{color:#d6a72b}
 .casino-caesars,.casino-mgm,.casino-hardrock,.casino-wynn,.casino-encore,.casino-borgata,.casino-ameristar,.casino-lauberge,.casino-goldennugget,.casino-goldstrike,.casino-coushatta{color:#d7aa36}
+
+/* v7.7 raster casino artwork: approved generated brand tiles, cached offline. */
+.casino-icon img{width:100%;height:100%;display:block;object-fit:cover;border-radius:inherit}
