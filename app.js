@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.2';
+const APP_VERSION='8.2.1';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -377,7 +377,9 @@ function renderPhoenixCalculator(){
   const hint=$('phoenixHint');if(hint)hint.textContent=valid?'Probable EV in bet units · denomination-specific historical model.':'Enter a valid non-negative persistent counter.';
 }
 function initials(name){const parts=String(name||'?').trim().split(/\s+/).filter(Boolean);return(parts.length>1?(parts[0][0]+parts[1][0]):parts[0]?.slice(0,2)||'?').toUpperCase()}
-function showPage(page){currentPage=['home','schedule','add','reports','more'].includes(page)?page:'home';for(const p of ['Home','Schedule','Add','Reports','More'])$('page'+p).hidden=currentPage!==p.toLowerCase();for(const p of ['Home','Schedule','Add','Reports','More'])$('nav'+p).classList.toggle('active',currentPage===p.toLowerCase());if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();window.scrollTo({top:0,behavior:'instant'})}
+function showPage(page){currentPage=['home','schedule','add','reports','calculators','more'].includes(page)?page:'home';for(const p of ['Home','Schedule','Add','Reports','Calculators','More'])$('page'+p).hidden=currentPage!==p.toLowerCase();for(const p of ['Home','Schedule','Add','Reports','More'])$('nav'+p).classList.toggle('active',currentPage===p.toLowerCase());if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();window.scrollTo({top:0,behavior:'instant'})}
+function showCalculatorsHome(){showPage('calculators');$('calculatorHub').hidden=false;$('calculatorPhoenix').hidden=true}
+function openCalculator(name){showPage('calculators');$('calculatorHub').hidden=true;$('calculatorPhoenix').hidden=name!=='phoenix';if(name==='phoenix'){renderPhoenixCalculator();setTimeout(()=>{const el=$('phoenixCounter');if(el)el.focus()},0)}}
 function goAdd(view){showPage('add');setEntryView(view)}
 function setEntryView(view){entryView=['session','freeplay','reconcile'].includes(view)?view:'session';$('entrySession').hidden=entryView!=='session';$('entryFreeplay').hidden=entryView!=='freeplay';$('entryReconcile').hidden=entryView!=='reconcile';$('entrySessionTab').classList.toggle('active',entryView==='session');$('entryFpTab').classList.toggle('active',entryView==='freeplay');$('entryReconTab').classList.toggle('active',entryView==='reconcile')}
 function setReportView(view){reportView=['overview','casino','fp','audit'].includes(view)?view:'overview';for(const x of ['Overview','Casino','Fp','Audit'])$('report'+x+'Tab').classList.toggle('active',reportView===x.toLowerCase());renderReports()}
