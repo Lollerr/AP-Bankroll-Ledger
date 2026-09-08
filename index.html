@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AP Bankroll">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="styles.css">
+<title>AP Bankroll</title>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>AP Bankroll</h1><div class="sub">Local-first ledger · v7.1</div></div>
+    <div id="syncBadge" class="badge">Starting…</div>
+  </header>
+
+  <section class="card highlight">
+    <div class="label">MY 15% FREE PLAY PAYABLE</div>
+    <div id="fpPayable" class="hero">$0.00</div>
+    <div id="fpPayDetail" class="sub">15% of actual free-play cash collected, less recorded payments.</div>
+    <button id="settleBtn" class="gold" onclick="settleFreePlay()">MARK CURRENT BALANCE PAID</button>
+  </section>
+
+  <div id="status" class="status">Ready</div>
+
+  <section id="newSession" class="card">
+    <div class="label">START PLAY SESSION</div>
+    <input id="sessionPlayerName" autocomplete="off" placeholder="Player / card name">
+    <select id="casinoSelect"></select>
+    <div class="money-grid">
+      <button class="money" onclick="startSession(500)">$500</button>
+      <button class="money" onclick="startSession(1000)">$1,000</button>
+      <button class="money" onclick="startSession(2000)">$2,000</button>
+    </div>
+  </section>
+
+  <section id="activeSession" class="card" hidden>
+    <div class="label">ACTIVE PLAY SESSION</div>
+    <div id="activeCasino" class="big"></div>
+    <div id="activePlayer" class="sub"></div>
+    <div class="label spaced">ADDITIONAL MONEY ADDED</div>
+    <div class="money-grid">
+      <button class="money" onclick="addReload(500)">+$500</button>
+      <button class="money" onclick="addReload(1000)">+$1,000</button>
+      <button class="money" onclick="addReload(2000)">+$2,000</button>
+    </div>
+    <div class="info"><div class="label">LAST RELOAD RECORDED</div><div id="lastReload" class="big">None yet</div></div>
+    <div class="label spaced">ALL PLAYS FINISHED</div>
+    <input id="cashOutAmount" inputmode="decimal" placeholder="Final amount">
+    <button class="green" onclick="finishSession()">FINAL AMOUNT / END SESSION</button>
+  </section>
+
+  <section class="card">
+    <div class="label">FREE PLAY CONVERSION</div>
+    <select id="fpCasinoSelect"></select>
+    <input id="fpPlayerName" autocomplete="off" placeholder="Name on player card">
+    <input id="fpFaceValue" inputmode="decimal" placeholder="Free-play face value">
+    <input id="fpCashOut" inputmode="decimal" placeholder="Actual amount cashed out">
+    <button class="purple" onclick="saveFreePlay()">ADD FREE PLAY CASH</button>
+    <div class="sub">Your 15% is calculated from actual cash collected, not face value.</div>
+  </section>
+
+  <section class="card">
+    <div class="label">BANKROLL RECONCILIATION</div>
+    <div id="variance" class="big">—</div>
+    <div id="reconDetail" class="sub"></div>
+    <input id="physicalCount" inputmode="decimal" placeholder="Physical cash counted">
+    <button onclick="reconcileNow()">RECONCILE NOW</button>
+  </section>
+
+  <section class="card compact">
+    <div class="row"><div><div class="label">BACKUP STATUS</div><div id="backupDetail" class="sub">Checking local queue…</div></div><button class="small" onclick="syncNow(true)">SYNC NOW</button></div>
+  </section>
+
+  <section class="card compact">
+    <div class="label">SYNC SECURITY</div>
+    <div id="keyDetail" class="sub">No private sync key saved on this device.</div>
+    <input id="syncKeyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Private sync key">
+    <div class="row"><button class="small" onclick="saveSyncKey()">SAVE / CHANGE KEY</button><button class="small" onclick="clearSyncKey()">REMOVE KEY</button></div>
+  </section>
+</main>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
