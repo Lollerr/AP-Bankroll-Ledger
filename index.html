@@ -15,14 +15,20 @@
 <body>
 <main>
   <header>
-    <div><h1>AP Bankroll</h1><div class="sub">Local-first ledger · v7.2</div></div>
+    <div><h1>AP Bankroll</h1><div class="sub">Local-first ledger · v7.3</div></div>
     <div id="syncBadge" class="badge">Starting…</div>
   </header>
 
   <section class="card highlight">
-    <div class="label">MY 15% FREE PLAY PAYABLE</div>
-    <div id="fpPayable" class="hero">$0.00</div>
+    <div class="label">FREE PLAY · <span id="fpMonthLabel">CURRENT MONTH</span></div>
+    <div class="fp-stats">
+      <div class="fp-stat primary"><div class="label">15% PAYABLE NOW</div><div id="fpPayable" class="hero">$0.00</div></div>
+      <div class="fp-stat"><div class="label">ACTUAL FP CASH</div><div id="fpActualCash" class="fp-number">$0.00</div></div>
+      <div class="fp-stat"><div class="label">SCHEDULED FP OFFERS</div><div id="fpScheduledTotal" class="fp-number">$0.00</div></div>
+      <div class="fp-stat"><div class="label">15% OF SCHEDULED</div><div id="fpScheduledPay" class="fp-number">$0.00</div></div>
+    </div>
     <div id="fpPayDetail" class="sub">15% of actual free-play cash collected, less recorded payments.</div>
+    <div id="fpScheduleDetail" class="sub"></div>
     <button id="settleBtn" class="gold" onclick="settleFreePlay()">MARK CURRENT BALANCE PAID</button>
   </section>
 

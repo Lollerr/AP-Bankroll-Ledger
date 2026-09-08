@@ -30,7 +30,7 @@ async function refreshEvents(){eventsCache=await reqP(store('events').getAll());
 async function markSynced(ids){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const id of ids){const ev=await reqP(s.get(id));if(ev){ev.synced=true;ev.syncedAt=Date.now();s.put(ev)}}await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 async function deleteSynced(){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const ev of eventsCache) if(ev.synced) s.delete(ev.id);await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 
-function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},lastReload:null,recent:[]}}
+function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},lastReload:null,recent:[]}}
 function defaultState(){return {active:null,lastReload:null}}
 function uuid(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}
 function event(type,payload){return {id:uuid(),type,ts:new Date().toISOString(),createdAt:Date.now(),deviceId,payload,synced:false}}
@@ -234,8 +234,14 @@ function render(){
   const v=viewData(),a=localState.active;
   $('newSession').hidden=!!a;$('activeSession').hidden=!a;
   if(a){$('activeCasino').textContent=a.casino;$('activePlayer').textContent='Player / Card: '+a.playerName;const lr=localState.lastReload;$('lastReload').textContent=lr?money(lr.amount).replace('.00','')+' at '+new Date(lr.ts).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'}):'None yet'}
+  const sched=baseline.schedule||{};
   $('fpPayable').textContent=money(v.fpPayable);
-  $('fpPayDetail').textContent=money(v.fpEarned)+' earned · '+money(v.fpPaid)+' paid · '+money(v.fpCash)+' actual FP cash collected';
+  $('fpActualCash').textContent=money(v.fpCash);
+  $('fpScheduledTotal').textContent=sched.ok?money(sched.totalOffers):'—';
+  $('fpScheduledPay').textContent=sched.ok?money(sched.offerPay):'—';
+  $('fpMonthLabel').textContent=(sched.monthLabel||'CURRENT MONTH').toUpperCase();
+  $('fpPayDetail').textContent=money(v.fpEarned)+' earned · '+money(v.fpPaid)+' paid';
+  $('fpScheduleDetail').textContent=sched.ok?('Rusty schedule · '+(sched.unknownCount?String(sched.unknownCount)+' unknown FP offer'+(sched.unknownCount===1?'':'s')+' excluded':'all listed FP amounts known')):'Rusty schedule total unavailable until the next successful sync.';
   $('settleBtn').disabled=actionLocked||v.fpPayable<=0;
   $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'okText':'badText');
   $('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
@@ -307,7 +313,7 @@ async function init(){
   db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';
   baseline=await metaGet('baseline')||defaultBaseline();localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();render();
   if(configured()&&navigator.onLine){try{await bootstrapRemote()}catch(e){setStatus('Cloud unavailable; local mode is ready.')}syncNow(false)}
-  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.2 sync URL before deployment.');
+  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.3 sync URL before deployment.');
   else if(!syncKey) setStatus('Local mode ready. Enter the private sync key to enable Google backup.');
   window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});
