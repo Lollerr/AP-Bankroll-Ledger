@@ -388,11 +388,11 @@ function frameRequest(params,timeout=18000,keyOverride=syncKey){
   });
 }
 async function cloudGet(params,timeout=18000,keyOverride=syncKey){
-  // v8.0.2 uses an iframe/postMessage response first. This avoids iOS standalone-PWA failures
+  // v8.0.3 uses an iframe/postMessage response first. The Apps Script frame response explicitly allows cross-origin embedding
   // seen with cross-origin JSONP ContentService redirects. JSONP remains a compatibility fallback.
   try{return await frameRequest(params,timeout,keyOverride)}catch(frameErr){
     try{return await jsonp(params,timeout,keyOverride)}catch(jsonpErr){
-      throw new Error('Cloud request failed');
+      throw new Error('Cloud request failed (frame: '+(frameErr?.message||'failed')+'; JSONP: '+(jsonpErr?.message||'failed')+')');
     }
   }
 }
