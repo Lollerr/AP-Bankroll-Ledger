@@ -368,16 +368,37 @@ function renderScheduleCalendar(d){
 
 function jsonp(params,timeout=15000,keyOverride=syncKey){
   return new Promise((resolve,reject)=>{
-    const cb='apcb_'+Date.now()+'_'+Math.random().toString(36).slice(2);const s=document.createElement('script');
+    const cb='apcb_'+Date.now()+'_'+Math.random().toString(36).slice(2);const s=document.createElement('script');let settled=false;
     const timer=setTimeout(()=>done(new Error('Cloud request timed out')),timeout);
-    function done(err,data){clearTimeout(timer);try{delete window[cb]}catch(e){}s.remove();err?reject(err):resolve(data)}
+    function done(err,data){if(settled)return;settled=true;clearTimeout(timer);try{delete window[cb]}catch(e){}s.remove();err?reject(err):resolve(data)}
     window[cb]=data=>done(null,data);
-    const u=new URL(API);Object.entries({...params,key:keyOverride,callback:cb}).forEach(([k,v])=>u.searchParams.set(k,v));s.src=u.toString();s.onerror=()=>done(new Error('Cloud request failed'));document.head.appendChild(s);
+    const u=new URL(API);Object.entries({...params,key:keyOverride,callback:cb,_:Date.now()}).forEach(([k,v])=>u.searchParams.set(k,v));s.src=u.toString();s.async=true;s.referrerPolicy='no-referrer';s.onerror=()=>done(new Error('Cloud request failed'));document.head.appendChild(s);
   });
+}
+function frameRequest(params,timeout=18000,keyOverride=syncKey){
+  return new Promise((resolve,reject)=>{
+    const requestId='apframe_'+Date.now()+'_'+Math.random().toString(36).slice(2);const frame=document.createElement('iframe');let settled=false;
+    frame.style.display='none';frame.setAttribute('aria-hidden','true');
+    const timer=setTimeout(()=>done(new Error('Cloud request timed out')),timeout);
+    function cleanup(){clearTimeout(timer);window.removeEventListener('message',onMessage);frame.remove()}
+    function done(err,data){if(settled)return;settled=true;cleanup();err?reject(err):resolve(data)}
+    function onMessage(ev){const d=ev.data;if(!d||d.apBankroll!==true||d.requestId!==requestId)return;done(null,d.payload)}
+    window.addEventListener('message',onMessage);
+    const u=new URL(API);Object.entries({...params,key:keyOverride,transport:'frame',requestId,_:Date.now()}).forEach(([k,v])=>u.searchParams.set(k,v));frame.src=u.toString();frame.onerror=()=>done(new Error('Cloud request failed'));document.body.appendChild(frame);
+  });
+}
+async function cloudGet(params,timeout=18000,keyOverride=syncKey){
+  // v8.0.2 uses an iframe/postMessage response first. This avoids iOS standalone-PWA failures
+  // seen with cross-origin JSONP ContentService redirects. JSONP remains a compatibility fallback.
+  try{return await frameRequest(params,timeout,keyOverride)}catch(frameErr){
+    try{return await jsonp(params,timeout,keyOverride)}catch(jsonpErr){
+      throw new Error('Cloud request failed');
+    }
+  }
 }
 async function bootstrapRemote(keyOverride=syncKey){
   if(!endpointConfigured()||!keyOverride||!navigator.onLine) return false;
-  const data=await jsonp({action:'bootstrap'},15000,keyOverride);
+  const data=await cloudGet({action:'bootstrap'},18000,keyOverride);
   if(!data?.ok){
     if(data?.error==='UNAUTHORIZED') throw new Error('Private sync key was rejected');
     throw new Error(data?.error?('Bootstrap failed: '+data.error):'Bootstrap failed');
@@ -396,7 +417,7 @@ async function pollAck(ids){
   const waits=[500,1200,2500,4000,7000];
   for(const wait of waits){
     await new Promise(r=>setTimeout(r,wait));
-    try{const a=await jsonp({action:'ack',ids:ids.join(',')},12000);if(a?.acked?.length) return a.acked}catch(e){}
+    try{const a=await cloudGet({action:'ack',ids:ids.join(',')},15000);if(a?.acked?.length) return a.acked}catch(e){}
   }
   return [];
 }
@@ -429,7 +450,7 @@ async function syncNow(manual=false){
 
 
 async function init(){
-  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();bootstrapReady=!!baseline.syncAt;localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();setEntryView('session');showPage('home');render();
+  if('serviceWorker'in navigator){try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!sessionStorage.getItem('ap-sw-reloaded')){sessionStorage.setItem('ap-sw-reloaded','1');location.reload()}})}catch(e){}}db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();bootstrapReady=!!baseline.syncAt;localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();setEntryView('session');showPage('home');render();
   if(configured()&&navigator.onLine)await syncNow(false);else if(!endpointConfigured())setStatus('Local mode ready. Configure the sync URL.');else if(!syncKey)setStatus('Ledger data unavailable — enter and verify the private sync key in More.');else if(!bootstrapReady)setStatus('Ledger data unavailable — sync required.');window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});setInterval(()=>{if(!document.hidden)syncNow(false)},20000)
 }
 init().catch(e=>setStatus('Startup error: '+e.message));
