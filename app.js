@@ -12,51 +12,65 @@ const endpointConfigured=()=>/^https:\/\//.test(API)&&!API.includes('PASTE_');
 const configured=()=>endpointConfigured()&&!!syncKey;
 
 
-// v7.5.1 casino visual identifiers. Horseshoe uses the Caesars-family mark. These are lightweight in-app SVG marks, not downloaded logos.
+// v7.6 casino brand icon set used by Schedule views. Inline SVG keeps the icon library fast and available offline.
 function casinoKey(location){
   const s=String(location||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ');
-  if(s.includes('horseshoe')) return 'caesars';
+  if(s.includes('horseshoe')||s.includes('caesars')) return 'caesars';
+  if(s.includes('mgm')) return 'mgm';
+  if(s.includes('hard rock')) return 'hardrock';
+  if(s.includes('bally')) return 'ballys';
+  if(s.includes('wynn')) return 'wynn';
+  if(s.includes('encore')) return 'encore';
+  if(s.includes('resorts world')) return 'resortsworld';
+  if(s.includes('ocean')) return 'ocean';
+  if(s.includes('borgata')) return 'borgata';
   if(s.includes('gold strike')) return 'goldstrike';
   if(s.includes('southland')) return 'southland';
   if(s.includes('ameristar')) return 'ameristar';
   if(s.includes('waterview')||s.includes('water view')) return 'waterview';
   if(s.includes('pearl river')) return 'pearlriver';
-  if(s.includes('caesars')) return 'caesars';
   if(s.includes('harrah')) return 'harrahs';
   if(s.includes('hollywood')) return 'hollywood';
   if(s.includes('boomtown')) return 'boomtown';
   if(s.includes('coushatta')) return 'coushatta';
-  if(s.includes('golden nugget')||/^gn/.test(s)) return 'goldennugget';
-  if(s.includes("l auberge")||s.includes('lauberge')) return 'lauberge';
+  if(s.includes('golden nugget')||/^gn\b/.test(s)) return 'goldennugget';
+  if(s.includes('l auberge')||s.includes('lauberge')) return 'lauberge';
   if(s.includes('paragon')) return 'paragon';
   if(s.includes('scarlet pearl')) return 'scarletpearl';
   if(s.includes('treasure chest')) return 'treasurechest';
-  if(/^ip/.test(s)||s.includes(' ip biloxi')) return 'ip';
+  if(/^ip\b/.test(s)||s.includes(' ip biloxi')) return 'ip';
   return 'generic';
 }
 function casinoIconSvg(location,compact=false){
   const k=casinoKey(location),c=compact?' casino-icon-compact':'';
-  const open=`<span class="casino-icon casino-${k}${c}" aria-hidden="true">`;
-  const close='</span>';
-  const svg=(body,view='0 0 40 40')=>`${open}<svg viewBox="${view}" focusable="false">${body}</svg>${close}`;
+  const open=`<span class="casino-icon casino-${k}${c}" aria-hidden="true">`, close='</span>';
+  const svg=(body,view='0 0 48 48')=>`${open}<svg viewBox="${view}" focusable="false">${body}</svg>${close}`;
+  const text=(t,cls='brand-script',x=24,y=29,size=13)=>svg(`<text x="${x}" y="${y}" text-anchor="middle" class="${cls}" style="font-size:${size}px">${t}</text>`);
   switch(k){
-    case 'horseshoe': return svg('<path d="M10 7v12c0 8 4 14 10 14s10-6 10-14V7h-6v12c0 4-1.7 7-4 7s-4-3-4-7V7z"/><circle cx="13" cy="9" r="1.7" class="cut"/><circle cx="27" cy="9" r="1.7" class="cut"/>');
-    case 'goldstrike': return svg('<path d="M20 3l4.2 9.1 9.8 1.1-7.2 6.7 2 9.6-8.8-4.9-8.8 4.9 2-9.6L6 13.2l9.8-1.1z"/><path d="M23 7l-8 13h6l-4 13 10-16h-6z" class="accent"/>');
-    case 'southland': return svg('<path d="M6 24c5-9 12-13 20-11 3 .8 6 3 8 6-4-1-7-.6-9 1 4 2 6 5 7 9-4-3-8-4-12-3l-5 7-3-1 3-8c-3 1-5 3-7 6l-3-2z"/><circle cx="26.5" cy="16" r="1.2" class="cut"/>');
-    case 'ameristar': return svg('<path d="M20 3l4.5 10 10.5 1.2-7.8 7 2.2 10.3L20 26.2l-9.4 5.3 2.2-10.3-7.8-7L15.5 13z"/><circle cx="20" cy="19" r="4" class="cut"/>');
-    case 'waterview': return svg('<path d="M4 10l5 20 6-14 5 14 5-14 6 14 5-20h-6l-3 10-4-10h-6l-4 10-3-10z"/><path d="M4 34c5-4 10-4 15 0 5-4 10-4 17 0" class="stroke"/>');
-    case 'pearlriver': return svg('<circle cx="20" cy="14" r="7"/><path d="M4 25c5-4 10-4 16 0 6-4 11-4 16 0M4 31c5-4 10-4 16 0 6-4 11-4 16 0" class="stroke"/>');
-    case 'caesars': return svg('<path d="M20 7a13 13 0 1 0 0 26" class="stroke thick"/><path d="M13 8l-4-3m2 8-5-1m4 8-5 2m8 4-4 4" class="stroke"/><text x="20" y="25" text-anchor="middle">C</text>');
-    case 'harrahs': return svg('<path d="M8 7h7v10h10V7h7v26h-7V23H15v10H8z"/>');
-    case 'hollywood': return svg('<path d="M8 7h7v10h10V7h7v26h-7V23H15v10H8z"/><path d="M30 3l1.4 3 3.3.4-2.4 2.2.7 3.2-3-1.7-3 1.7.7-3.2-2.4-2.2 3.3-.4z" class="accent"/>');
-    case 'boomtown': return svg('<path d="M20 4l3 8 8-3-3 8 8 3-8 3 3 8-8-3-3 8-3-8-8 3 3-8-8-3 8-3-3-8 8 3z"/><text x="20" y="24" text-anchor="middle" class="cuttext">B</text>');
-    case 'coushatta': return svg('<path d="M29 9c-8-6-18-1-18 11s10 17 18 11" class="stroke thick"/><path d="M27 7c-6 8-7 17-2 27" class="stroke"/>');
-    case 'goldennugget': return svg('<path d="M9 12l11-8 11 8-4 20H13z"/><text x="20" y="25" text-anchor="middle" class="cuttext">GN</text>');
-    case 'lauberge': return svg('<path d="M20 4c2 6 6 7 10 8-4 2-7 5-7 10h5c0 5-3 9-8 14-5-5-8-9-8-14h5c0-5-3-8-7-10 4-1 8-2 10-8z"/>');
-    case 'paragon': return svg('<path d="M20 4l14 16-14 16L6 20z"/><text x="20" y="25" text-anchor="middle" class="cuttext">P</text>');
-    case 'scarletpearl': return svg('<circle cx="20" cy="20" r="12"/><path d="M10 29c6-5 14-5 20 0" class="stroke light"/>');
-    case 'treasurechest': return svg('<path d="M7 17h26v16H7zM10 17v-3c0-5 4-8 10-8s10 3 10 8v3"/><path d="M18 21h4v7h-4z" class="cut"/>');
-    case 'ip': return svg('<rect x="7" y="7" width="8" height="26" rx="2"/><path d="M20 7h7c5 0 8 3 8 8s-3 8-8 8h-2v10h-5zm5 6v5h2c2 0 3-1 3-2.5S29 13 27 13z"/>');
+    case 'caesars': return svg(`<g class="stroke thick"><path d="M17 6c-7 3-12 10-12 18s5 15 12 18M31 6c7 3 12 10 12 18s-5 15-12 18"/><path d="M14 8l-5-3m4 8-6-1m5 7-7 1m8 5-6 3m8 2-5 5m24-27 5-3m-4 8 6-1m-5 7 7 1m-8 5 6 3m-8 2 5 5"/></g><path d="M27 10c-4 0-8 3-9 7-3 2-4 5-3 8 1 3 4 4 7 4v8h11l-3-8c3-3 4-7 2-11-1-3-2-5-5-8z"/><path d="M20 16c3-3 7-4 10-1-3 0-5 1-7 3 3-1 6 0 8 2-4-1-7 0-9 2" class="cutstroke"/>`);
+    case 'mgm': return svg(`<path d="M8 33c3-12 9-20 18-22 7-2 12 2 14 7-5-2-9-1-12 2 6 0 10 3 12 8-5-3-10-3-14-1l-4 10-5-1 2-7-6 7z"/><path d="M25 13l-4-5 7 2 4-4 1 7"/>`);
+    case 'hardrock': return svg(`<circle cx="24" cy="24" r="18" class="stroke thick"/><text x="24" y="22" text-anchor="middle" class="brand-script" style="font-size:10px">Hard</text><text x="24" y="31" text-anchor="middle" class="brand-script" style="font-size:10px">Rock</text>`);
+    case 'ballys': return text('B','brand-script',24,34,31);
+    case 'wynn': return text('Wynn','brand-script',24,29,15);
+    case 'encore': return text('Encore','brand-script',24,29,12);
+    case 'resortsworld': return svg(`<circle cx="24" cy="24" r="16" class="stroke thick"/><path d="M17 33c-3-9 0-18 8-24-1 7 2 11 8 13-6 2-10 6-12 12" class="stroke thick"/>`);
+    case 'ocean': return svg(`<path d="M4 18c8-7 14-7 21 0 7 6 12 6 19-1v7c-7 7-13 7-20 1-7-6-12-6-20 1zM4 29c8-6 14-6 21 0 7 5 12 5 19-1v6c-7 6-13 6-20 1-7-5-12-5-20 1z"/>`);
+    case 'borgata': return text('Borgata','brand-script',24,29,11);
+    case 'harrahs': return svg(`<text x="24" y="29" text-anchor="middle" class="brand-block" style="font-size:13px">Harrah's</text><path d="M38 11l1.5 3 3.5.5-2.5 2.4.6 3.4-3.1-1.7-3.1 1.7.6-3.4-2.5-2.4 3.5-.5z" class="accent"/>`);
+    case 'hollywood': return svg(`<path d="M8 7h9l-2 13h12l2-13h9l-6 34h-9l2-13H13l-2 13H2z"/><path d="M35 31h4v4h4v4h-4v4h-4v-4h-4v-4h4z" class="accent"/>`);
+    case 'ameristar': return svg(`<path d="M24 3l4 12 13-4-8 10 10 7-13-1-2 14-5-12-12 7 7-11-12-5 13-2z"/><path d="M24 12v24M15 24h18" class="cutstroke thick"/>`);
+    case 'lauberge': return svg(`<path d="M24 4c3 8 8 10 13 11-6 3-9 7-9 13h6c-1 7-5 12-10 16-5-4-9-9-10-16h6c0-6-3-10-9-13 5-1 10-3 13-11z"/>`);
+    case 'goldennugget': return svg(`<path d="M8 16l5-8 4 5 7-9 7 9 4-5 5 8-4 24H12z"/><text x="24" y="29" text-anchor="middle" class="cuttext" style="font-size:9px">GOLDEN</text><text x="24" y="36" text-anchor="middle" class="cuttext" style="font-size:8px">NUGGET</text>`);
+    case 'southland': return svg(`<path d="M8 14c10-8 19-7 28 1-7-2-12 0-15 4 8-1 14 2 18 8-7-3-13-2-18 2l-8 9 4-11c-5 1-8 4-11 8 1-9 4-16 10-20z"/><path d="M11 12c8 1 14 5 19 11" class="accent stroke thick"/>`);
+    case 'goldstrike': return svg(`<text x="24" y="31" text-anchor="middle" class="brand-serif" style="font-size:23px">GS</text>`);
+    case 'ip': return svg(`<text x="24" y="33" text-anchor="middle" class="brand-block" style="font-size:29px">IP</text>`);
+    case 'pearlriver': return svg(`<path d="M5 20c6-5 11-5 17 0 6 5 11 5 21-1" class="stroke thick"/><path d="M5 27c6-5 11-5 17 0 6 5 11 5 21-1" class="accent stroke thick"/><text x="24" y="40" text-anchor="middle" class="brand-block" style="font-size:6px">PEARL RIVER</text>`);
+    case 'waterview': return svg(`<path d="M4 18c7-6 12-6 19 0 7 6 12 6 21-1" class="stroke thick"/><path d="M4 25c7-6 12-6 19 0 7 6 12 6 21-1" class="accent stroke thick"/><text x="24" y="39" text-anchor="middle" class="brand-block" style="font-size:6px">WATERVIEW</text>`);
+    case 'coushatta': return svg(`<path d="M24 4l8 10 12 10-12 10-8 10-8-10L4 24l12-10z"/><path d="M24 10l5 9 9 5-9 5-5 9-5-9-9-5 9-5z" class="cut"/><path d="M24 15l4 9-4 9-4-9z" class="accent"/>`);
+    case 'boomtown': return text('B','brand-script',24,34,30);
+    case 'paragon': return svg(`<path d="M24 4l17 20-17 20L7 24z"/><text x="24" y="29" text-anchor="middle" class="cuttext" style="font-size:13px">P</text>`);
+    case 'scarletpearl': return svg(`<circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="10" class="cut"/><circle cx="24" cy="24" r="5"/>`);
+    case 'treasurechest': return svg(`<path d="M6 19h36v23H6zM10 19v-4c0-7 6-11 14-11s14 4 14 11v4"/><path d="M21 25h6v10h-6z" class="cut"/>`);
     default: return `${open}<span class="casino-icon-text">${esc(initials(location))}</span>${close}`;
   }
 }
@@ -422,7 +436,7 @@ async function init(){
   db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';
   baseline=await metaGet('baseline')||defaultBaseline();localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();render();
   if(configured()&&navigator.onLine){try{await bootstrapRemote()}catch(e){setStatus('Cloud unavailable; local mode is ready.')}syncNow(false)}
-  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.5.1 sync URL before deployment.');
+  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.6 sync URL before deployment.');
   else if(!syncKey) setStatus('Local mode ready. Enter the private sync key to enable Google backup.');
   window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});

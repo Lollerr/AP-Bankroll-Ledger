@@ -17,3 +17,14 @@
 .breakdown-location-wrap{display:flex;align-items:center;gap:9px;min-width:0}.breakdown-location-wrap .breakdown-location{min-width:0;overflow-wrap:anywhere}.casino-icon-compact{width:30px;height:30px;border-radius:8px}.casino-icon-compact svg{width:25px;height:25px}.casino-icon-compact .casino-icon-text{font-size:9px}
 .cal-icons{display:flex;gap:2px;align-items:center;margin-top:5px;min-height:18px}.cal-icons .casino-icon-compact{width:18px;height:18px;border-radius:5px;border-color:#3b4b63}.cal-icons .casino-icon-compact svg{width:15px;height:15px}.cal-icons .casino-icon-compact .casino-icon-text{font-size:6px}.cal-more{font-size:8px;color:#94a3b8;font-weight:800;margin-left:1px}.cal-total{margin-top:4px}
 @media(max-width:390px){.casino-icon{width:34px;height:34px}.casino-icon svg{width:28px;height:28px}.casino-icon-compact{width:26px;height:26px}.casino-icon-compact svg{width:22px;height:22px}.cal-icons .casino-icon-compact{width:16px;height:16px}.cal-icons .casino-icon-compact svg{width:13px;height:13px}}
+
+/* v7.6 brand-icon refinements */
+.casino-icon svg .cutstroke{fill:none;stroke:#071b2a;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.casino-icon svg .brand-script{font-family:Georgia,serif;font-style:italic;font-weight:700;fill:currentColor;stroke:none}
+.casino-icon svg .brand-serif{font-family:Georgia,serif;font-weight:700;fill:currentColor;stroke:none}
+.casino-icon svg .brand-block{font-family:Arial,sans-serif;font-weight:900;fill:currentColor;stroke:none}
+.casino-ballys,.casino-hollywood,.casino-resortsworld{color:#ef3340}
+.casino-ocean,.casino-ip,.casino-pearlriver,.casino-waterview{color:#32b9df}
+.casino-harrahs{color:#d98cff}
+.casino-southland{color:#d6a72b}
+.casino-caesars,.casino-mgm,.casino-hardrock,.casino-wynn,.casino-encore,.casino-borgata,.casino-ameristar,.casino-lauberge,.casino-goldennugget,.casino-goldstrike,.casino-coushatta{color:#d7aa36}
