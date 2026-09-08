@@ -3,6 +3,7 @@ const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NO
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
 let actionLocked=false,syncRunning=false;
+let currentPage='ledger',scheduleView='date';
 
 const $=id=>document.getElementById(id);
 const money=n=>'$'+Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -30,7 +31,7 @@ async function refreshEvents(){eventsCache=await reqP(store('events').getAll());
 async function markSynced(ids){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const id of ids){const ev=await reqP(s.get(id));if(ev){ev.synced=true;ev.syncedAt=Date.now();s.put(ev)}}await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 async function deleteSynced(){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const ev of eventsCache) if(ev.synced) s.delete(ev.id);await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 
-function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},lastReload:null,recent:[]}}
+function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},scheduleData:{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]},lastReload:null,recent:[]}}
 function defaultState(){return {active:null,lastReload:null}}
 function uuid(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}
 function event(type,payload){return {id:uuid(),type,ts:new Date().toISOString(),createdAt:Date.now(),deviceId,payload,synced:false}}
@@ -254,6 +255,64 @@ function render(){
   $('backupDetail').textContent=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required before Google backup can run.':p?`${p} local entr${p===1?'y':'ies'} awaiting Google backup · Last cloud sync ${last}`:`All local entries backed up · Last cloud sync ${last}`;
   $('keyDetail').textContent=syncKey?'Private sync key is stored only on this device.':'No private sync key saved on this device.';
   renderCorrectionPicker();
+  if(currentPage==='schedule') renderSchedule();
+}
+
+
+function esc(v){return String(v??'').replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
+function money0(n){return '$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0})}
+function initials(name){const parts=String(name||'?').trim().split(/\s+/).filter(Boolean);return (parts.length>1?(parts[0][0]+parts[1][0]):parts[0]?.slice(0,2)||'?').toUpperCase()}
+function showPage(page){
+  currentPage=page==='schedule'?'schedule':'ledger';
+  $('pageLedger').hidden=currentPage!=='ledger';$('pageSchedule').hidden=currentPage!=='schedule';
+  $('tabLedger').classList.toggle('active',currentPage==='ledger');$('tabSchedule').classList.toggle('active',currentPage==='schedule');
+  if(currentPage==='schedule') renderSchedule();
+  window.scrollTo({top:0,behavior:'instant'});
+}
+function setScheduleView(view){scheduleView=['date','casino','calendar'].includes(view)?view:'date';renderSchedule()}
+function scheduleData(){return baseline.scheduleData||{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]}}
+function renderSchedule(){
+  if(!$('scheduleContent')) return;
+  const d=scheduleData();
+  $('viewDate').classList.toggle('active',scheduleView==='date');$('viewCasino').classList.toggle('active',scheduleView==='casino');$('viewCalendar').classList.toggle('active',scheduleView==='calendar');
+  $('scheduleMonth').textContent=d.ok?d.monthLabel:'Schedule';
+  $('schTotal').textContent=d.ok?money0(d.knownTotal):'—';$('schPay').textContent=d.ok?money(d.projectedPay):'—';
+  $('schKnown').textContent=d.ok?String(d.knownCount):'—';$('schUnknown').textContent=d.ok?String(d.unknownCount):'—';
+  $('scheduleMeta').textContent=d.ok?`${d.entryCount} scheduled entries · ${d.knownCount} known FP amounts · ${d.unknownCount} unknown · Last cloud sync ${baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'—'}`:'Schedule unavailable until the next successful sync.';
+  if(!d.ok){$('scheduleContent').innerHTML='<div class="schedule-empty">Schedule data is not available yet. Connect to the internet and tap SYNC NOW.</div>';return}
+  if(scheduleView==='casino') renderScheduleCasino(d); else if(scheduleView==='calendar') renderScheduleCalendar(d); else renderScheduleDate(d);
+}
+function renderScheduleDate(d){
+  const groups=new Map();
+  for(const x of d.entries||[]){if(!groups.has(x.date))groups.set(x.date,[]);groups.get(x.date).push(x)}
+  let html='';
+  for(const [date,rows] of groups){
+    const known=rows.reduce((a,x)=>a+(Number(x.amount)||0),0),unknown=rows.filter(x=>x.unknown).length;
+    const label=rows[0]?.dateLabel||date;
+    html+=`<section class="day-group"><div class="day-head"><span>${esc(label).toUpperCase()}</span><span>${money0(known)}${unknown?` <span class="pill">${unknown} IDK</span>`:''}</span></div>`;
+    for(const x of rows){
+      const amt=x.unknown?'IDK':money0(x.amount);
+      const detail=[x.time,x.card].filter(Boolean).map(esc).join(' · ');
+      html+=`<div class="offer-row"><div class="casino-mark">${esc(initials(x.location))}</div><div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${detail||'No time/card detail'}${x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount)?` · FP ${esc(x.fpRaw)}`:''}</div></div><div class="offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
+    }
+    html+='</section>';
+  }
+  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown / To Be Determined</div><section class="day-group unknown-card"><div class="unknown-title day-head"><span>FP AMOUNT UNKNOWN</span><span>${d.unknown.length}</span></div>`;for(const x of d.unknown){html+=`<div class="offer-row"><div class="casino-mark">?</div><div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')} · ${esc(x.time||'No time')}</div></div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
+  $('scheduleContent').innerHTML=html||'<div class="schedule-empty">No entries for this month.</div>';
+}
+function renderScheduleCasino(d){
+  let html='<section class="casino-breakdown"><div class="breakdown-head"><div>CASINO / LOCATION</div><div class="num">OFFERS</div><div class="num">TOTAL FP</div><div class="num">15%</div></div>';
+  for(const x of d.breakdown||[]){html+=`<div class="breakdown-row"><div class="breakdown-location">${esc(x.location)}${x.unknownCount?` <span class="pill">${x.unknownCount} IDK</span>`:''}</div><div class="num">${x.offers}</div><div class="num">${money0(x.total)}</div><div class="num">${money(x.pay)}</div></div>`}
+  html+='</section>';
+  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown Offers</div><section class="day-group unknown-card">`;for(const x of d.unknown){html+=`<div class="offer-row"><div class="casino-mark">?</div><div><div class="offer-location">${esc(x.location)}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')}</div></div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
+  $('scheduleContent').innerHTML=html;
+}
+function renderScheduleCalendar(d){
+  const [year,month]=String(d.monthKey||'').split('-').map(Number);if(!year||!month){$('scheduleContent').innerHTML='<div class="schedule-empty">Calendar unavailable.</div>';return}
+  const by={};for(const x of d.entries||[]){if(!by[x.date])by[x.date]={total:0,count:0,unknown:0};by[x.date].total+=Number(x.amount)||0;by[x.date].count++;if(x.unknown)by[x.date].unknown++}
+  const first=new Date(year,month-1,1),days=new Date(year,month,0).getDate();let html='<div class="calendar-grid">';for(const w of ['S','M','T','W','T','F','S'])html+=`<div class="cal-dow">${w}</div>`;for(let i=0;i<first.getDay();i++)html+='<div class="cal-day empty"></div>';
+  for(let day=1;day<=days;day++){const key=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,x=by[key];html+=`<div class="cal-day"><div class="cal-date">${day}</div>${x?`<div class="cal-total">${money0(x.total)}</div><div class="cal-count">${x.count} offer${x.count===1?'':'s'}${x.unknown?` · ${x.unknown} IDK`:''}</div>`:''}</div>`}
+  html+='</div>';$('scheduleContent').innerHTML=html;
 }
 
 function jsonp(params,timeout=15000){
@@ -313,7 +372,7 @@ async function init(){
   db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';
   baseline=await metaGet('baseline')||defaultBaseline();localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();render();
   if(configured()&&navigator.onLine){try{await bootstrapRemote()}catch(e){setStatus('Cloud unavailable; local mode is ready.')}syncNow(false)}
-  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.3 sync URL before deployment.');
+  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.4 sync URL before deployment.');
   else if(!syncKey) setStatus('Local mode ready. Enter the private sync key to enable Google backup.');
   window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});

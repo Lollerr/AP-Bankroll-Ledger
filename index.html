@@ -15,10 +15,17 @@
 <body>
 <main>
   <header>
-    <div><h1>AP Bankroll</h1><div class="sub">Local-first ledger · v7.3</div></div>
+    <div><h1>AP Bankroll</h1><div class="sub">Local-first ledger · v7.4</div></div>
     <div id="syncBadge" class="badge">Starting…</div>
   </header>
 
+
+  <nav class="top-tabs" aria-label="Main navigation">
+    <button id="tabLedger" class="top-tab active" onclick="showPage('ledger')">LEDGER</button>
+    <button id="tabSchedule" class="top-tab" onclick="showPage('schedule')">SCHEDULE</button>
+  </nav>
+
+  <div id="pageLedger">
   <section class="card highlight">
     <div class="label">FREE PLAY · <span id="fpMonthLabel">CURRENT MONTH</span></div>
     <div class="fp-stats">
@@ -113,6 +120,23 @@
     <input id="syncKeyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Private sync key">
     <div class="row"><button class="small" onclick="saveSyncKey()">SAVE / CHANGE KEY</button><button class="small" onclick="clearSyncKey()">REMOVE KEY</button></div>
   </section>
+
+  </div>
+
+  <div id="pageSchedule" hidden>
+    <section class="schedule-head">
+      <div class="schedule-month-row"><button class="icon-btn" aria-label="Previous month" disabled>‹</button><div><div id="scheduleMonth" class="schedule-month">Schedule</div><div class="sub">Rusty › Schedule</div></div><button class="icon-btn" aria-label="Next month" disabled>›</button></div>
+      <div class="schedule-summary-card">
+        <div class="summary-cell"><div class="summary-icon">$</div><div><div id="schTotal" class="summary-number">—</div><div class="summary-label">TOTAL SCHEDULED FP</div></div></div>
+        <div class="summary-cell"><div class="summary-icon">15</div><div><div id="schPay" class="summary-number">—</div><div class="summary-label">15% OF SCHEDULED</div></div></div>
+        <div class="summary-cell"><div class="summary-icon">✓</div><div><div id="schKnown" class="summary-number">—</div><div class="summary-label">KNOWN OFFERS</div></div></div>
+        <div class="summary-cell"><div class="summary-icon">?</div><div><div id="schUnknown" class="summary-number">—</div><div class="summary-label">UNKNOWN / IDK</div></div></div>
+      </div>
+      <div class="view-tabs"><button id="viewDate" class="view-tab active" onclick="setScheduleView('date')">By Date</button><button id="viewCasino" class="view-tab" onclick="setScheduleView('casino')">By Casino</button><button id="viewCalendar" class="view-tab" onclick="setScheduleView('calendar')">Calendar</button></div>
+    </section>
+    <div id="scheduleContent"></div>
+    <section class="card schedule-meta"><div class="row"><div><div class="label">SCHEDULE SOURCE</div><div id="scheduleMeta" class="sub">Waiting for cloud sync…</div></div><button class="small" onclick="syncNow(true)">SYNC NOW</button></div></section>
+  </div>
 </main>
 <script src="config.js"></script>
 <script src="app.js"></script>
