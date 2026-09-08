@@ -30,7 +30,7 @@ async function refreshEvents(){eventsCache=await reqP(store('events').getAll());
 async function markSynced(ids){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const id of ids){const ev=await reqP(s.get(id));if(ev){ev.synced=true;ev.syncedAt=Date.now();s.put(ev)}}await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 async function deleteSynced(){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const ev of eventsCache) if(ev.synced) s.delete(ev.id);await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 
-function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},lastReload:null}}
+function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},lastReload:null,recent:[]}}
 function defaultState(){return {active:null,lastReload:null}}
 function uuid(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}
 function event(type,payload){return {id:uuid(),type,ts:new Date().toISOString(),createdAt:Date.now(),deviceId,payload,synced:false}}
@@ -50,6 +50,16 @@ function viewData(){
     }
     if(e.type==='fp_settlement') fpPaid+=Number(e.payload.amount)||0;
     if(e.type==='reconcile') physical=Number(e.payload.counted)||0;
+    if(e.type==='correction'){
+      const b=e.payload.before||{},a=e.payload.after||{};
+      if(e.payload.targetType==='session' && String(b.status||'')!=='OPEN'){
+        expected+=round2((Number(a.net)||0)-(Number(b.net)||0));
+      }
+      if(e.payload.targetType==='freeplay'){
+        const delta=round2((Number(a.cashOut)||0)-(Number(b.cashOut)||0));
+        expected+=delta;fpCash+=delta;fpEarned+=round2(delta*.15);
+      }
+    }
   }
   expected=round2(expected); physical=round2(physical);
   return {expected,physical,variance:round2(physical-expected),fpCash:round2(fpCash),fpEarned:round2(fpEarned),fpPaid:round2(fpPaid),fpPayable:Math.max(0,round2(fpEarned-fpPaid)),pending:p.length};
@@ -133,9 +143,90 @@ async function reconcileNow(){
   await commitLocal(ev,()=>{$('physicalCount').value=''},'Reconciliation recorded');
 }
 
+
+function recentEntries(){
+  const map=new Map();
+  for(const x of (baseline.recent||[])) map.set(x.targetType+'|'+x.targetId,{...x});
+  for(const e of pending()){
+    const p=e.payload||{};
+    if(e.type==='session_start'){
+      map.set('session|'+p.sessionId,{targetType:'session',targetId:p.sessionId,ts:e.ts,casino:p.casino,playerName:p.playerName,initial:Number(p.amount)||0,reloads:0,totalDeployed:Number(p.amount)||0,final:0,net:-(Number(p.amount)||0),status:'OPEN'});
+    }else if(e.type==='reload'){
+      const k='session|'+p.sessionId,x=map.get(k);if(x){x.reloads=round2((Number(x.reloads)||0)+(Number(p.amount)||0));x.totalDeployed=round2((Number(x.initial)||0)+x.reloads);x.net=x.status==='CLOSED'?round2((Number(x.final)||0)-x.totalDeployed):-x.totalDeployed;x.ts=e.ts;}
+    }else if(e.type==='cashout'){
+      const k='session|'+p.sessionId;let x=map.get(k);if(!x)x={targetType:'session',targetId:p.sessionId,casino:p.casino,playerName:p.playerName,initial:Math.max(0,(Number(p.totalDeployed)||0)),reloads:0,totalDeployed:Number(p.totalDeployed)||0};x.final=Number(p.amount)||0;x.totalDeployed=Number(p.totalDeployed)||x.totalDeployed||0;x.net=Number(p.net)||0;x.status='CLOSED';x.ts=e.ts;map.set(k,x);
+    }else if(e.type==='freeplay'){
+      map.set('freeplay|'+e.id,{targetType:'freeplay',targetId:e.id,ts:e.ts,casino:p.casino,playerName:p.playerName,faceValue:Number(p.faceValue)||0,cashOut:Number(p.cashOut)||0});
+    }else if(e.type==='correction'){
+      const k=p.targetType+'|'+p.targetId,x=map.get(k);if(x){Object.assign(x,p.after||{});x.ts=e.ts;}
+    }
+  }
+  return [...map.values()].sort((a,b)=>String(b.ts||'').localeCompare(String(a.ts||''))).slice(0,40);
+}
+function correctionLabel(x){
+  const d=x.ts?new Date(x.ts).toLocaleDateString([], {month:'numeric',day:'numeric'}):'';
+  if(x.targetType==='session') return `${d} · PLAY · ${x.casino} · ${x.playerName} · ${x.status==='OPEN'?'OPEN':money(x.net)+' P/L'}`;
+  return `${d} · FP · ${x.casino} · ${x.playerName} · ${money(x.cashOut)}`;
+}
+function renderCorrectionPicker(){
+  const sel=$('correctionTarget'),items=recentEntries(),old=sel.value;
+  sel.innerHTML='';
+  if(!items.length){sel.add(new Option('No recent entries available',''));$('correctionEmpty').hidden=false;$('sessionCorrection').hidden=true;$('fpCorrection').hidden=true;return}
+  $('correctionEmpty').hidden=true;
+  sel.add(new Option('Select an entry to correct…',''));
+  for(const x of items) sel.add(new Option(correctionLabel(x),x.targetType+'|'+x.targetId));
+  if([...sel.options].some(o=>o.value===old)) sel.value=old;
+}
+function selectedCorrection(){
+  const val=$('correctionTarget').value;if(!val)return null;
+  const i=val.indexOf('|');const type=val.slice(0,i),id=val.slice(i+1);
+  return recentEntries().find(x=>x.targetType===type&&String(x.targetId)===id)||null;
+}
+function loadCorrectionTarget(){
+  const x=selectedCorrection();$('sessionCorrection').hidden=!x||x.targetType!=='session';$('fpCorrection').hidden=!x||x.targetType!=='freeplay';
+  if(!x)return;
+  if(x.targetType==='session'){
+    $('corrSessionCasino').value=x.casino;$('corrSessionPlayer').value=x.playerName;$('corrInitial').value=x.initial;$('corrReloads').value=x.reloads;$('corrFinal').value=x.final;
+    $('corrFinal').disabled=x.status==='OPEN';$('corrSessionSummary').textContent=x.status==='OPEN'?'Active session · final amount remains unavailable until session is closed.':'Current P/L '+money(x.net)+' · deployed '+money(x.totalDeployed);
+  }else{
+    $('corrFpCasino').value=x.casino;$('corrFpPlayer').value=x.playerName;$('corrFpFace').value=x.faceValue;$('corrFpCash').value=x.cashOut;
+  }
+  $('correctionReason').value='';
+}
+async function saveCorrection(){
+  const x=selectedCorrection();if(!x){setStatus('Select an entry to correct.');return}
+  const reason=$('correctionReason').value.trim();let after;
+  if(x.targetType==='session'){
+    const casino=$('corrSessionCasino').value,player=$('corrSessionPlayer').value.trim();
+    const ir=$('corrInitial').value.trim(),rr=$('corrReloads').value.trim(),fr=$('corrFinal').value.trim();
+    const initial=Number(ir),reloads=Number(rr),final=x.status==='OPEN'?0:Number(fr);
+    if(!player){setStatus('Enter the player / card name.');return}
+    if(ir===''||!Number.isFinite(initial)||initial<=0){setStatus('Enter a valid positive initial load.');return}
+    if(rr===''||!Number.isFinite(reloads)||reloads<0){setStatus('Enter a valid reload total.');return}
+    if(x.status!=='OPEN'&&(fr===''||!Number.isFinite(final)||final<0)){setStatus('Enter a valid final cash-out.');return}
+    const totalDeployed=round2(initial+reloads),net=x.status==='OPEN'?-totalDeployed:round2(final-totalDeployed);
+    after={casino,playerName:player,initial,reloads,totalDeployed,final,net,status:x.status};
+  }else{
+    const casino=$('corrFpCasino').value,player=$('corrFpPlayer').value.trim();
+    const ar=$('corrFpFace').value.trim(),cr=$('corrFpCash').value.trim(),faceValue=Number(ar),cashOut=Number(cr);
+    if(!player){setStatus('Enter the name on the player card.');return}
+    if(ar===''||!Number.isFinite(faceValue)||faceValue<=0){setStatus('Enter a valid free-play face value.');return}
+    if(cr===''||!Number.isFinite(cashOut)||cashOut<0){setStatus('Enter a valid actual cash amount.');return}
+    after={casino,playerName:player,faceValue,cashOut};
+  }
+  const before={...x};delete before.targetType;delete before.targetId;delete before.ts;
+  const changed=Object.keys(after).some(k=>String(after[k])!==String(before[k]));if(!changed){setStatus('Nothing changed.');return}
+  const ev=event('correction',{targetType:x.targetType,targetId:x.targetId,before,after,reason});
+  await commitLocal(ev,()=>{
+    if(x.targetType==='session'&&localState.active&&String(localState.active.sessionId)===String(x.targetId)){
+      localState.active.casino=after.casino;localState.active.playerName=after.playerName;localState.active.initial=after.initial;localState.active.reloads=after.reloads;localState.active.totalDeployed=after.totalDeployed;
+    }
+  },'Correction recorded');
+}
+
 function populateCasinos(){
   const list=[...new Set([...(baseline.casinos||[]),...DEFAULT_CASINOS])].filter(Boolean).sort();
-  for(const id of ['casinoSelect','fpCasinoSelect']){
+  for(const id of ['casinoSelect','fpCasinoSelect','corrSessionCasino','corrFpCasino']){
     const el=$(id),old=el.value;el.innerHTML='';for(const c of list) el.add(new Option(c,c));if(list.includes(old)) el.value=old;
   }
 }
@@ -156,6 +247,7 @@ function render(){
   const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';
   $('backupDetail').textContent=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required before Google backup can run.':p?`${p} local entr${p===1?'y':'ies'} awaiting Google backup · Last cloud sync ${last}`:`All local entries backed up · Last cloud sync ${last}`;
   $('keyDetail').textContent=syncKey?'Private sync key is stored only on this device.':'No private sync key saved on this device.';
+  renderCorrectionPicker();
 }
 
 function jsonp(params,timeout=15000){
@@ -215,7 +307,7 @@ async function init(){
   db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';
   baseline=await metaGet('baseline')||defaultBaseline();localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();render();
   if(configured()&&navigator.onLine){try{await bootstrapRemote()}catch(e){setStatus('Cloud unavailable; local mode is ready.')}syncNow(false)}
-  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.1 sync URL before deployment.');
+  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.2 sync URL before deployment.');
   else if(!syncKey) setStatus('Local mode ready. Enter the private sync key to enable Google backup.');
   window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});

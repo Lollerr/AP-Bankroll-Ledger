@@ -15,7 +15,7 @@
 <body>
 <main>
   <header>
-    <div><h1>AP Bankroll</h1><div class="sub">Local-first ledger · v7.1</div></div>
+    <div><h1>AP Bankroll</h1><div class="sub">Local-first ledger · v7.2</div></div>
     <div id="syncBadge" class="badge">Starting…</div>
   </header>
 
@@ -63,6 +63,30 @@
     <input id="fpCashOut" inputmode="decimal" placeholder="Actual amount cashed out">
     <button class="purple" onclick="saveFreePlay()">ADD FREE PLAY CASH</button>
     <div class="sub">Your 15% is calculated from actual cash collected, not face value.</div>
+  </section>
+
+  <section class="card">
+    <div class="label">CORRECT AN ENTRY</div>
+    <div class="sub">Corrections preserve an audit trail. Original raw events are never deleted.</div>
+    <select id="correctionTarget" onchange="loadCorrectionTarget()"></select>
+    <div id="correctionEmpty" class="sub">Recent synced and local entries will appear here.</div>
+    <div id="sessionCorrection" hidden>
+      <div class="label spaced">SESSION CORRECTION</div>
+      <select id="corrSessionCasino"></select>
+      <input id="corrSessionPlayer" autocomplete="off" placeholder="Player / card name">
+      <div class="correction-grid"><input id="corrInitial" inputmode="decimal" placeholder="Initial load"><input id="corrReloads" inputmode="decimal" placeholder="Total reloads"></div>
+      <input id="corrFinal" inputmode="decimal" placeholder="Final cash-out">
+      <div id="corrSessionSummary" class="sub"></div>
+    </div>
+    <div id="fpCorrection" hidden>
+      <div class="label spaced">FREE PLAY CORRECTION</div>
+      <select id="corrFpCasino"></select>
+      <input id="corrFpPlayer" autocomplete="off" placeholder="Name on player card">
+      <div class="correction-grid"><input id="corrFpFace" inputmode="decimal" placeholder="Free-play face value"><input id="corrFpCash" inputmode="decimal" placeholder="Actual cash collected"></div>
+    </div>
+    <input id="correctionReason" autocomplete="off" placeholder="Reason / note (optional)">
+    <button class="orange" onclick="saveCorrection()">SAVE CORRECTION</button>
+    <button class="small full" onclick="syncNow(true)">REFRESH RECENT ENTRIES</button>
   </section>
 
   <section class="card">
