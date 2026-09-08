@@ -198,7 +198,36 @@ async function reconcileNow(){
 
 function recentEntries(){
   const map=new Map();
+
+  // v8.1.1: build a durable correction list from report history first.
+  // This keeps recently-synced offline entries correctable even if the
+  // dedicated bootstrap `recent` payload is stale or missing on a device.
+  const reports=baseline.reports||{};
+  for(const x of (reports.sessions||[])){
+    const id=String(x.id||'');
+    if(!id) continue;
+    map.set('session|'+id,{
+      targetType:'session',targetId:id,ts:x.ts||x.date||'',casino:x.casino||'',playerName:x.playerName||'',
+      initial:Number(x.initial)||0,reloads:Number(x.reloads)||0,totalDeployed:Number(x.totalDeployed)||0,
+      final:Number(x.final)||0,net:Number(x.net)||0,status:String(x.status||'')
+    });
+  }
+  for(const x of (reports.freePlay||[])){
+    const id=String(x.id||'');
+    if(!id) continue;
+    map.set('freeplay|'+id,{
+      targetType:'freeplay',targetId:id,ts:x.ts||'',casino:x.casino||'',playerName:x.playerName||'',
+      faceValue:Number(x.faceValue)||0,cashOut:Number(x.cashOut)||0
+    });
+  }
+
+  // The dedicated recent payload is preferred when present because it is the
+  // server's intentionally small, correction-oriented view. It overwrites
+  // matching report-history records by target type + target ID.
   for(const x of (baseline.recent||[])) map.set(x.targetType+'|'+x.targetId,{...x});
+
+  // Pending local events are applied last so the picker always reflects the
+  // newest unsynced state on this device.
   for(const e of pending()){
     const p=e.payload||{};
     if(e.type==='session_start'){
