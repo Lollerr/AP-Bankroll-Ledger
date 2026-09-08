@@ -11,6 +11,56 @@ const round2=n=>Math.round((Number(n)||0)*100)/100;
 const endpointConfigured=()=>/^https:\/\//.test(API)&&!API.includes('PASTE_');
 const configured=()=>endpointConfigured()&&!!syncKey;
 
+
+// v7.5 casino visual identifiers. These are lightweight in-app SVG marks, not downloaded logos.
+function casinoKey(location){
+  const s=String(location||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ');
+  if(s.includes('horseshoe')) return 'horseshoe';
+  if(s.includes('gold strike')) return 'goldstrike';
+  if(s.includes('southland')) return 'southland';
+  if(s.includes('ameristar')) return 'ameristar';
+  if(s.includes('waterview')||s.includes('water view')) return 'waterview';
+  if(s.includes('pearl river')) return 'pearlriver';
+  if(s.includes('caesars')) return 'caesars';
+  if(s.includes('harrah')) return 'harrahs';
+  if(s.includes('hollywood')) return 'hollywood';
+  if(s.includes('boomtown')) return 'boomtown';
+  if(s.includes('coushatta')) return 'coushatta';
+  if(s.includes('golden nugget')||/^gn/.test(s)) return 'goldennugget';
+  if(s.includes("l auberge")||s.includes('lauberge')) return 'lauberge';
+  if(s.includes('paragon')) return 'paragon';
+  if(s.includes('scarlet pearl')) return 'scarletpearl';
+  if(s.includes('treasure chest')) return 'treasurechest';
+  if(/^ip/.test(s)||s.includes(' ip biloxi')) return 'ip';
+  return 'generic';
+}
+function casinoIconSvg(location,compact=false){
+  const k=casinoKey(location),c=compact?' casino-icon-compact':'';
+  const open=`<span class="casino-icon casino-${k}${c}" aria-hidden="true">`;
+  const close='</span>';
+  const svg=(body,view='0 0 40 40')=>`${open}<svg viewBox="${view}" focusable="false">${body}</svg>${close}`;
+  switch(k){
+    case 'horseshoe': return svg('<path d="M10 7v12c0 8 4 14 10 14s10-6 10-14V7h-6v12c0 4-1.7 7-4 7s-4-3-4-7V7z"/><circle cx="13" cy="9" r="1.7" class="cut"/><circle cx="27" cy="9" r="1.7" class="cut"/>');
+    case 'goldstrike': return svg('<path d="M20 3l4.2 9.1 9.8 1.1-7.2 6.7 2 9.6-8.8-4.9-8.8 4.9 2-9.6L6 13.2l9.8-1.1z"/><path d="M23 7l-8 13h6l-4 13 10-16h-6z" class="accent"/>');
+    case 'southland': return svg('<path d="M6 24c5-9 12-13 20-11 3 .8 6 3 8 6-4-1-7-.6-9 1 4 2 6 5 7 9-4-3-8-4-12-3l-5 7-3-1 3-8c-3 1-5 3-7 6l-3-2z"/><circle cx="26.5" cy="16" r="1.2" class="cut"/>');
+    case 'ameristar': return svg('<path d="M20 3l4.5 10 10.5 1.2-7.8 7 2.2 10.3L20 26.2l-9.4 5.3 2.2-10.3-7.8-7L15.5 13z"/><circle cx="20" cy="19" r="4" class="cut"/>');
+    case 'waterview': return svg('<path d="M4 10l5 20 6-14 5 14 5-14 6 14 5-20h-6l-3 10-4-10h-6l-4 10-3-10z"/><path d="M4 34c5-4 10-4 15 0 5-4 10-4 17 0" class="stroke"/>');
+    case 'pearlriver': return svg('<circle cx="20" cy="14" r="7"/><path d="M4 25c5-4 10-4 16 0 6-4 11-4 16 0M4 31c5-4 10-4 16 0 6-4 11-4 16 0" class="stroke"/>');
+    case 'caesars': return svg('<path d="M20 7a13 13 0 1 0 0 26" class="stroke thick"/><path d="M13 8l-4-3m2 8-5-1m4 8-5 2m8 4-4 4" class="stroke"/><text x="20" y="25" text-anchor="middle">C</text>');
+    case 'harrahs': return svg('<path d="M8 7h7v10h10V7h7v26h-7V23H15v10H8z"/>');
+    case 'hollywood': return svg('<path d="M8 7h7v10h10V7h7v26h-7V23H15v10H8z"/><path d="M30 3l1.4 3 3.3.4-2.4 2.2.7 3.2-3-1.7-3 1.7.7-3.2-2.4-2.2 3.3-.4z" class="accent"/>');
+    case 'boomtown': return svg('<path d="M20 4l3 8 8-3-3 8 8 3-8 3 3 8-8-3-3 8-3-8-8 3 3-8-8-3 8-3-3-8 8 3z"/><text x="20" y="24" text-anchor="middle" class="cuttext">B</text>');
+    case 'coushatta': return svg('<path d="M29 9c-8-6-18-1-18 11s10 17 18 11" class="stroke thick"/><path d="M27 7c-6 8-7 17-2 27" class="stroke"/>');
+    case 'goldennugget': return svg('<path d="M9 12l11-8 11 8-4 20H13z"/><text x="20" y="25" text-anchor="middle" class="cuttext">GN</text>');
+    case 'lauberge': return svg('<path d="M20 4c2 6 6 7 10 8-4 2-7 5-7 10h5c0 5-3 9-8 14-5-5-8-9-8-14h5c0-5-3-8-7-10 4-1 8-2 10-8z"/>');
+    case 'paragon': return svg('<path d="M20 4l14 16-14 16L6 20z"/><text x="20" y="25" text-anchor="middle" class="cuttext">P</text>');
+    case 'scarletpearl': return svg('<circle cx="20" cy="20" r="12"/><path d="M10 29c6-5 14-5 20 0" class="stroke light"/>');
+    case 'treasurechest': return svg('<path d="M7 17h26v16H7zM10 17v-3c0-5 4-8 10-8s10 3 10 8v3"/><path d="M18 21h4v7h-4z" class="cut"/>');
+    case 'ip': return svg('<rect x="7" y="7" width="8" height="26" rx="2"/><path d="M20 7h7c5 0 8 3 8 8s-3 8-8 8h-2v10h-5zm5 6v5h2c2 0 3-1 3-2.5S29 13 27 13z"/>');
+    default: return `${open}<span class="casino-icon-text">${esc(initials(location))}</span>${close}`;
+  }
+}
+
 async function openDB(){
   return new Promise((resolve,reject)=>{
     const r=indexedDB.open('ap-bankroll-v7',1);
@@ -293,25 +343,25 @@ function renderScheduleDate(d){
     for(const x of rows){
       const amt=x.unknown?'IDK':money0(x.amount);
       const detail=[x.time,x.card].filter(Boolean).map(esc).join(' · ');
-      html+=`<div class="offer-row"><div class="casino-mark">${esc(initials(x.location))}</div><div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${detail||'No time/card detail'}${x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount)?` · FP ${esc(x.fpRaw)}`:''}</div></div><div class="offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
+      html+=`<div class="offer-row">${casinoIconSvg(x.location)}<div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${detail||'No time/card detail'}${x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount)?` · FP ${esc(x.fpRaw)}`:''}</div></div><div class="offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
     }
     html+='</section>';
   }
-  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown / To Be Determined</div><section class="day-group unknown-card"><div class="unknown-title day-head"><span>FP AMOUNT UNKNOWN</span><span>${d.unknown.length}</span></div>`;for(const x of d.unknown){html+=`<div class="offer-row"><div class="casino-mark">?</div><div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')} · ${esc(x.time||'No time')}</div></div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
+  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown / To Be Determined</div><section class="day-group unknown-card"><div class="unknown-title day-head"><span>FP AMOUNT UNKNOWN</span><span>${d.unknown.length}</span></div>`;for(const x of d.unknown){html+=`<div class="offer-row"><span class="casino-icon casino-generic"><span class="casino-icon-text">?</span></span><div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')} · ${esc(x.time||'No time')}</div></div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
   $('scheduleContent').innerHTML=html||'<div class="schedule-empty">No entries for this month.</div>';
 }
 function renderScheduleCasino(d){
   let html='<section class="casino-breakdown"><div class="breakdown-head"><div>CASINO / LOCATION</div><div class="num">OFFERS</div><div class="num">TOTAL FP</div><div class="num">15%</div></div>';
-  for(const x of d.breakdown||[]){html+=`<div class="breakdown-row"><div class="breakdown-location">${esc(x.location)}${x.unknownCount?` <span class="pill">${x.unknownCount} IDK</span>`:''}</div><div class="num">${x.offers}</div><div class="num">${money0(x.total)}</div><div class="num">${money(x.pay)}</div></div>`}
+  for(const x of d.breakdown||[]){html+=`<div class="breakdown-row"><div class="breakdown-location-wrap">${casinoIconSvg(x.location,true)}<div class="breakdown-location">${esc(x.location)}${x.unknownCount?` <span class="pill">${x.unknownCount} IDK</span>`:''}</div></div><div class="num">${x.offers}</div><div class="num">${money0(x.total)}</div><div class="num">${money(x.pay)}</div></div>`}
   html+='</section>';
-  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown Offers</div><section class="day-group unknown-card">`;for(const x of d.unknown){html+=`<div class="offer-row"><div class="casino-mark">?</div><div><div class="offer-location">${esc(x.location)}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')}</div></div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
+  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown Offers</div><section class="day-group unknown-card">`;for(const x of d.unknown){html+=`<div class="offer-row"><span class="casino-icon casino-generic"><span class="casino-icon-text">?</span></span><div><div class="offer-location">${esc(x.location)}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')}</div></div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
   $('scheduleContent').innerHTML=html;
 }
 function renderScheduleCalendar(d){
   const [year,month]=String(d.monthKey||'').split('-').map(Number);if(!year||!month){$('scheduleContent').innerHTML='<div class="schedule-empty">Calendar unavailable.</div>';return}
-  const by={};for(const x of d.entries||[]){if(!by[x.date])by[x.date]={total:0,count:0,unknown:0};by[x.date].total+=Number(x.amount)||0;by[x.date].count++;if(x.unknown)by[x.date].unknown++}
+  const by={};for(const x of d.entries||[]){if(!by[x.date])by[x.date]={total:0,count:0,unknown:0,locations:[]};by[x.date].total+=Number(x.amount)||0;by[x.date].count++;if(x.unknown)by[x.date].unknown++;if(x.location&&!by[x.date].locations.includes(x.location))by[x.date].locations.push(x.location)}
   const first=new Date(year,month-1,1),days=new Date(year,month,0).getDate();let html='<div class="calendar-grid">';for(const w of ['S','M','T','W','T','F','S'])html+=`<div class="cal-dow">${w}</div>`;for(let i=0;i<first.getDay();i++)html+='<div class="cal-day empty"></div>';
-  for(let day=1;day<=days;day++){const key=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,x=by[key];html+=`<div class="cal-day"><div class="cal-date">${day}</div>${x?`<div class="cal-total">${money0(x.total)}</div><div class="cal-count">${x.count} offer${x.count===1?'':'s'}${x.unknown?` · ${x.unknown} IDK`:''}</div>`:''}</div>`}
+  for(let day=1;day<=days;day++){const key=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,x=by[key];const icons=x?(x.locations||[]).slice(0,3).map(v=>casinoIconSvg(v,true)).join(''):'';const more=x&&x.locations.length>3?`<span class="cal-more">+${x.locations.length-3}</span>`:'';html+=`<div class="cal-day"><div class="cal-date">${day}</div>${x?`<div class="cal-icons">${icons}${more}</div><div class="cal-total">${money0(x.total)}</div><div class="cal-count">${x.count} offer${x.count===1?'':'s'}${x.unknown?` · ${x.unknown} IDK`:''}</div>`:''}</div>`}
   html+='</div>';$('scheduleContent').innerHTML=html;
 }
 
@@ -372,7 +422,7 @@ async function init(){
   db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';
   baseline=await metaGet('baseline')||defaultBaseline();localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();render();
   if(configured()&&navigator.onLine){try{await bootstrapRemote()}catch(e){setStatus('Cloud unavailable; local mode is ready.')}syncNow(false)}
-  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.4 sync URL before deployment.');
+  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.5 sync URL before deployment.');
   else if(!syncKey) setStatus('Local mode ready. Enter the private sync key to enable Google backup.');
   window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});
