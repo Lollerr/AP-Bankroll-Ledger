@@ -12,10 +12,10 @@ const endpointConfigured=()=>/^https:\/\//.test(API)&&!API.includes('PASTE_');
 const configured=()=>endpointConfigured()&&!!syncKey;
 
 
-// v7.5 casino visual identifiers. These are lightweight in-app SVG marks, not downloaded logos.
+// v7.5.1 casino visual identifiers. Horseshoe uses the Caesars-family mark. These are lightweight in-app SVG marks, not downloaded logos.
 function casinoKey(location){
   const s=String(location||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ');
-  if(s.includes('horseshoe')) return 'horseshoe';
+  if(s.includes('horseshoe')) return 'caesars';
   if(s.includes('gold strike')) return 'goldstrike';
   if(s.includes('southland')) return 'southland';
   if(s.includes('ameristar')) return 'ameristar';
@@ -422,7 +422,7 @@ async function init(){
   db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';
   baseline=await metaGet('baseline')||defaultBaseline();localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();render();
   if(configured()&&navigator.onLine){try{await bootstrapRemote()}catch(e){setStatus('Cloud unavailable; local mode is ready.')}syncNow(false)}
-  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.5 sync URL before deployment.');
+  else if(!endpointConfigured()) setStatus('Local mode ready. Configure the v7.5.1 sync URL before deployment.');
   else if(!syncKey) setStatus('Local mode ready. Enter the private sync key to enable Google backup.');
   window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});
