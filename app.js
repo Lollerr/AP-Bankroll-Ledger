@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.1.2';
+const APP_VERSION='8.2';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -347,6 +347,35 @@ function render(){
 }
 function esc(v){return String(v??'').replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
 function money0(n){return '$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0})}
+
+// Phoenix Link calculator. Constants mirror the denomination-specific models in
+// "Copy of PL updated" -> "Additional PL Data". Bet-range and all-data models
+// are intentionally excluded.
+const PHOENIX_MHB=1888;
+const PHOENIX_MODELS=[
+  {id:'phoenixEv0102',label:'$0.01–$0.02',rtp:0.8175741352147923,growthPerSpin:1.2306234594423464,avgFeature:38.03728789138267},
+  {id:'phoenixEv0525',label:'$0.05–$0.25',rtp:0.8451549207185887,growthPerSpin:1.2202279818355937,avgFeature:40.25382912648497},
+  {id:'phoenixEv12',label:'$1–$2',rtp:0.8560457490531819,growthPerSpin:1.2615698511761881,avgFeature:42.625862845010616},
+  {id:'phoenixEv510',label:'$5–$10',rtp:0.8293794521766762,growthPerSpin:1.2378646329837941,avgFeature:46.51317132768362}
+];
+function phoenixUnits(counter,model){
+  const growth=(PHOENIX_MHB-counter)/2;
+  const spins=growth/model.growthPerSpin;
+  return model.avgFeature-spins*(1-model.rtp);
+}
+function renderPhoenixCalculator(){
+  const input=$('phoenixCounter');if(!input)return;
+  const raw=input.value.trim().replace(/,/g,'');
+  const counter=Number(raw),valid=raw!==''&&Number.isFinite(counter)&&counter>=0;
+  for(const model of PHOENIX_MODELS){
+    const el=$(model.id);if(!el)continue;
+    if(!valid){el.textContent='—';el.className='';continue}
+    const units=phoenixUnits(counter,model);
+    el.textContent=(units>0?'+':'')+units.toFixed(2)+' units';
+    el.className=units>0?'good':units<0?'bad':'';
+  }
+  const hint=$('phoenixHint');if(hint)hint.textContent=valid?'Probable EV in bet units · denomination-specific historical model.':'Enter a valid non-negative persistent counter.';
+}
 function initials(name){const parts=String(name||'?').trim().split(/\s+/).filter(Boolean);return(parts.length>1?(parts[0][0]+parts[1][0]):parts[0]?.slice(0,2)||'?').toUpperCase()}
 function showPage(page){currentPage=['home','schedule','add','reports','more'].includes(page)?page:'home';for(const p of ['Home','Schedule','Add','Reports','More'])$('page'+p).hidden=currentPage!==p.toLowerCase();for(const p of ['Home','Schedule','Add','Reports','More'])$('nav'+p).classList.toggle('active',currentPage===p.toLowerCase());if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();window.scrollTo({top:0,behavior:'instant'})}
 function goAdd(view){showPage('add');setEntryView(view)}

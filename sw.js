@@ -1,4 +1,4 @@
-const CACHE='ap-bankroll-v8-1-2';
+const CACHE='ap-bankroll-v8-2';
 const ASSETS=["./", "./index.html", "./styles.css", "./app.js", "./config.js", "./manifest.webmanifest", "./apple-touch-icon.png", "./icon-192.png", "./icon-512.png", "./casino-icons/ballys.png", "./casino-icons/waterview.png", "./casino-icons/encore.png", "./casino-icons/hollywood.png", "./casino-icons/hardrock.png", "./casino-icons/wynn.png", "./casino-icons/ocean.png", "./casino-icons/resortsworld.png", "./casino-icons/caesars.png", "./casino-icons/goldennugget.png", "./casino-icons/southland.png", "./casino-icons/coushatta.png", "./casino-icons/lauberge.png", "./casino-icons/borgata.png", "./casino-icons/pearlriver.png", "./casino-icons/goldstrike.png", "./casino-icons/mgm.png", "./casino-icons/ameristar.png", "./casino-icons/harrahs.png", "./casino-icons/ip.png"];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
