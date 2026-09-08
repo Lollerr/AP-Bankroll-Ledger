@@ -1,4 +1,5 @@
 'use strict';
+const APP_VERSION='8.1.2';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -251,12 +252,32 @@ function correctionLabel(x){
 }
 function renderCorrectionPicker(){
   const sel=$('correctionTarget'),items=recentEntries(),old=sel.value;
+  const sessionCount=items.filter(x=>x.targetType==='session').length;
+  const fpCount=items.filter(x=>x.targetType==='freeplay').length;
+  const detail=$('correctionSourceDetail');
+  if(detail) detail.textContent=`${items.length} correctable entries loaded · ${sessionCount} sessions · ${fpCount} free play`;
   sel.innerHTML='';
   if(!items.length){sel.add(new Option('No recent entries available',''));$('correctionEmpty').hidden=false;$('sessionCorrection').hidden=true;$('fpCorrection').hidden=true;return}
   $('correctionEmpty').hidden=true;
   sel.add(new Option('Select an entry to correct…',''));
   for(const x of items) sel.add(new Option(correctionLabel(x),x.targetType+'|'+x.targetId));
   if([...sel.options].some(o=>o.value===old)) sel.value=old;
+}
+async function refreshCorrectionEntries(){
+  if(!configured()){setStatus('Cloud sync must be configured before refreshing correction entries.');return}
+  if(!navigator.onLine){setStatus('Offline. Correction entries will refresh when service returns.');return}
+  if(syncRunning){setStatus('A sync is already in progress. Try again in a moment.');return}
+  syncRunning=true;
+  try{
+    setStatus('Refreshing correction entries…');
+    await bootstrapRemote();
+    renderCorrectionPicker();
+    const items=recentEntries();
+    setStatus(`Correction entries refreshed · ${items.length} loaded · app ${APP_VERSION}`);
+  }catch(err){
+    cloudError=err.message||'Correction refresh failed';
+    setStatus('Correction refresh failed: '+cloudError);
+  }finally{syncRunning=false;render()}
 }
 function selectedCorrection(){
   const val=$('correctionTarget').value;if(!val)return null;
