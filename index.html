@@ -2,9 +2,18 @@
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#071522"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="AP Bankroll">
-<link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles.css"><title>AP Bankroll</title></head>
+<link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles.css"><title>AP Bankroll</title>
+<style>
+.calculator-list{display:grid;gap:12px;margin-top:12px}
+.calculator-choice{width:100%;min-height:84px;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;padding:16px 18px;margin:0;border-radius:14px;box-sizing:border-box}
+.calculator-choice .calc-copy{display:block;min-width:0}
+.calculator-choice .calc-name{display:block;font-size:16px;font-weight:800;line-height:1.2;margin-bottom:5px}
+.calculator-choice .calc-desc{display:block;font-size:12px;line-height:1.35;opacity:.72;font-weight:500}
+.calculator-choice .calc-arrow{flex:0 0 auto;font-size:22px;line-height:1;opacity:.65}
+@media (max-width:420px){.calculator-choice{min-height:80px;padding:14px 15px}.calculator-choice .calc-name{font-size:15px}.calculator-choice .calc-desc{font-size:11px}}
+</style></head>
 <body><main>
-<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.2.3</div></div><div id="syncBadge" class="badge">Starting…</div></header>
+<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.2.5</div></div><div id="syncBadge" class="badge">Starting…</div></header>
 <div id="status" class="status">Ready</div>
 
 <section id="pageHome" class="page">
@@ -46,7 +55,11 @@
 <section id="pageCalculators" class="page" hidden>
   <div id="calculatorHub">
     <div class="page-title"><h2>Calculators</h2><div class="sub">AP decision tools</div></div>
-    <section class="card"><div class="section-kicker">SLOT CALCULATORS</div><button onclick="openCalculator('phoenix')"><b>Phoenix Link</b><br><span class="sub">Aristocrat Gaming · probable EV by denomination</span></button><button onclick="openCalculator('wre')"><b>Wolf Run Eclipse</b><br><span class="sub">Persistent-state EV from Mini / Minor / Major / Mega values</span></button></section>
+    <section class="card"><div class="section-kicker">SLOT CALCULATORS</div><div class="calculator-list">
+      <button class="calculator-choice" onclick="openCalculator('phoenix')"><span class="calc-copy"><span class="calc-name">Phoenix Link</span><span class="calc-desc">Aristocrat Gaming · probable EV by denomination</span></span><span class="calc-arrow">›</span></button>
+      <button class="calculator-choice" onclick="openCalculator('wre')"><span class="calc-copy"><span class="calc-name">Wolf Run Eclipse</span><span class="calc-desc">Persistent-state EV from Mini / Minor / Major / Mega values</span></span><span class="calc-arrow">›</span></button>
+      <button class="calculator-choice" onclick="openCalculator('mtg')"><span class="calc-copy"><span class="calc-name">Magic Treasures Gold</span><span class="calc-desc">Persistent-state EV from Green / Purple / Gold values</span></span><span class="calc-arrow">›</span></button>
+    </div></section>
   </div>
   <div id="calculatorPhoenix" hidden>
     <div class="page-title"><h2>Phoenix Link</h2><div class="sub">Aristocrat Gaming · probable EV by denomination</div></div>
@@ -55,6 +68,10 @@
   <div id="calculatorWre" hidden>
     <div class="page-title"><h2>Wolf Run Eclipse</h2><div class="sub">Persistent-state EV calculator</div></div>
     <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><label class="sub" for="wreMini">Mini</label><input id="wreMini" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Mini" oninput="renderWreCalculator()"><label class="sub" for="wreMinor">Minor</label><input id="wreMinor" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Minor" oninput="renderWreCalculator()"><label class="sub" for="wreMajor">Major</label><input id="wreMajor" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Major" oninput="renderWreCalculator()"><label class="sub" for="wreMega">Mega</label><input id="wreMega" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Mega" oninput="renderWreCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="wreEv" class="hero">—</div></section>
+  </div>
+  <div id="calculatorMtg" hidden>
+    <div class="page-title"><h2>Magic Treasures Gold</h2><div class="sub">Persistent-state EV calculator</div></div>
+    <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><label class="sub" for="mtgGreen">Green</label><input id="mtgGreen" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Green" oninput="renderMtgCalculator()"><label class="sub" for="mtgPurple">Purple</label><input id="mtgPurple" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Purple" oninput="renderMtgCalculator()"><label class="sub" for="mtgGold">Gold</label><input id="mtgGold" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Gold" oninput="renderMtgCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="mtgEv" class="hero">—</div></section>
   </div>
 </section>
 
@@ -67,4 +84,4 @@
 </section>
 </main>
 <nav class="bottom-nav" aria-label="Main navigation"><button id="navHome" class="nav-item active" onclick="showPage('home')"><span class="nav-icon">⌂</span><span>Home</span></button><button id="navSchedule" class="nav-item" onclick="showPage('schedule')"><span class="nav-icon">▦</span><span>Schedule</span></button><button id="navAdd" class="nav-item nav-add" onclick="showPage('add')"><span class="plus">+</span><span>Add Entry</span></button><button id="navReports" class="nav-item" onclick="showPage('reports')"><span class="nav-icon">▥</span><span>Reports</span></button><button id="navMore" class="nav-item" onclick="showPage('more')"><span class="nav-icon">•••</span><span>More</span></button></nav>
-<script src="config.js?v=8.2.1"></script><script src="app.js?v=8.2.1"></script></body></html>
+<script src="config.js?v=8.2.5"></script><script src="app.js?v=8.2.5"></script></body></html>

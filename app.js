@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.2.3';
+const APP_VERSION='8.2.5';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -398,10 +398,29 @@ function renderWreCalculator(){
   out.className='hero '+(ev>0?'good':ev<0?'bad':'');
   if(hint)hint.textContent='';
 }
+
+// Magic Treasures Gold calculator. This reproduces "Copy of Slots Analyzer v1.2"
+// -> Magic Treasures Gold -> AM9 exactly:
+// AM9 = AM3*0.043496 + AN3*0.022892 + AO3*0.0079094.
+function mtgValue(id){
+  const el=$(id);if(!el)return {valid:false,value:0};
+  const raw=el.value.trim().replace(/,/g,'');
+  const value=Number(raw);
+  return {valid:raw!==''&&Number.isFinite(value)&&value>=0,value};
+}
+function mtgEv(green,purple,gold){return green*0.043496+purple*0.022892+gold*0.0079094}
+function renderMtgCalculator(){
+  const green=mtgValue('mtgGreen'),purple=mtgValue('mtgPurple'),gold=mtgValue('mtgGold');
+  const out=$('mtgEv');if(!out)return;
+  if(!(green.valid&&purple.valid&&gold.valid)){out.textContent='—';out.className='hero';return}
+  const ev=mtgEv(green.value,purple.value,gold.value);
+  out.textContent=(ev>0?'+':'')+ev.toFixed(2);
+  out.className='hero '+(ev>0?'good':ev<0?'bad':'');
+}
 function initials(name){const parts=String(name||'?').trim().split(/\s+/).filter(Boolean);return(parts.length>1?(parts[0][0]+parts[1][0]):parts[0]?.slice(0,2)||'?').toUpperCase()}
 function showPage(page){currentPage=['home','schedule','add','reports','calculators','more'].includes(page)?page:'home';for(const p of ['Home','Schedule','Add','Reports','Calculators','More'])$('page'+p).hidden=currentPage!==p.toLowerCase();for(const p of ['Home','Schedule','Add','Reports','More'])$('nav'+p).classList.toggle('active',currentPage===p.toLowerCase());if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();window.scrollTo({top:0,behavior:'instant'})}
-function showCalculatorsHome(){showPage('calculators');$('calculatorHub').hidden=false;$('calculatorPhoenix').hidden=true;$('calculatorWre').hidden=true}
-function openCalculator(name){showPage('calculators');$('calculatorHub').hidden=true;$('calculatorPhoenix').hidden=name!=='phoenix';$('calculatorWre').hidden=name!=='wre';if(name==='phoenix'){renderPhoenixCalculator();setTimeout(()=>{const el=$('phoenixCounter');if(el)el.focus()},0)}if(name==='wre'){renderWreCalculator();setTimeout(()=>{const el=$('wreMini');if(el)el.focus()},0)}}
+function showCalculatorsHome(){showPage('calculators');$('calculatorHub').hidden=false;$('calculatorPhoenix').hidden=true;$('calculatorWre').hidden=true;$('calculatorMtg').hidden=true}
+function openCalculator(name){showPage('calculators');$('calculatorHub').hidden=true;$('calculatorPhoenix').hidden=name!=='phoenix';$('calculatorWre').hidden=name!=='wre';$('calculatorMtg').hidden=name!=='mtg';if(name==='phoenix'){renderPhoenixCalculator();setTimeout(()=>{const el=$('phoenixCounter');if(el)el.focus()},0)}if(name==='wre'){renderWreCalculator();setTimeout(()=>{const el=$('wreMini');if(el)el.focus()},0)}if(name==='mtg'){renderMtgCalculator();setTimeout(()=>{const el=$('mtgGreen');if(el)el.focus()},0)}}
 function goAdd(view){showPage('add');setEntryView(view)}
 function setEntryView(view){entryView=['session','freeplay','reconcile'].includes(view)?view:'session';$('entrySession').hidden=entryView!=='session';$('entryFreeplay').hidden=entryView!=='freeplay';$('entryReconcile').hidden=entryView!=='reconcile';$('entrySessionTab').classList.toggle('active',entryView==='session');$('entryFpTab').classList.toggle('active',entryView==='freeplay');$('entryReconTab').classList.toggle('active',entryView==='reconcile')}
 function setReportView(view){reportView=['overview','casino','fp','audit'].includes(view)?view:'overview';for(const x of ['Overview','Casino','Fp','Audit'])$('report'+x+'Tab').classList.toggle('active',reportView===x.toLowerCase());renderReports()}
