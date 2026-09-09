@@ -4,7 +4,7 @@
 <meta name="theme-color" content="#071522"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="AP Bankroll">
 <link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles.css"><title>AP Bankroll</title></head>
 <body><main>
-<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.2.1</div></div><div id="syncBadge" class="badge">Starting…</div></header>
+<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.2.2</div></div><div id="syncBadge" class="badge">Starting…</div></header>
 <div id="status" class="status">Ready</div>
 
 <section id="pageHome" class="page">
@@ -46,11 +46,15 @@
 <section id="pageCalculators" class="page" hidden>
   <div id="calculatorHub">
     <div class="page-title"><h2>Calculators</h2><div class="sub">AP decision tools</div></div>
-    <section class="card"><div class="section-kicker">SLOT CALCULATORS</div><button onclick="openCalculator('phoenix')"><b>Phoenix Link</b><br><span class="sub">Aristocrat Gaming · probable EV by denomination</span></button></section>
+    <section class="card"><div class="section-kicker">SLOT CALCULATORS</div><button onclick="openCalculator('phoenix')"><b>Phoenix Link</b><br><span class="sub">Aristocrat Gaming · probable EV by denomination</span></button><button onclick="openCalculator('wre')"><b>Wolf Run Eclipse</b><br><span class="sub">Persistent-state EV from Mini / Minor / Major / Mega values</span></button></section>
   </div>
   <div id="calculatorPhoenix" hidden>
     <div class="page-title"><h2>Phoenix Link</h2><div class="sub">Aristocrat Gaming · probable EV by denomination</div></div>
     <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">PERSISTENT COUNTER</div><input id="phoenixCounter" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Persistent counter" aria-label="Phoenix persistent counter" oninput="renderPhoenixCalculator()"><table class="data-table"><tr><th>Denomination</th><th>Probable EV</th></tr><tr><td>$0.01–$0.02</td><td><b id="phoenixEv0102">—</b></td></tr><tr><td>$0.05–$0.25</td><td><b id="phoenixEv0525">—</b></td></tr><tr><td>$1–$2</td><td><b id="phoenixEv12">—</b></td></tr><tr><td>$5–$10</td><td><b id="phoenixEv510">—</b></td></tr></table><div id="phoenixHint" class="sub">Enter the persistent-state counter once to calculate all four denomination models.</div></section>
+  </div>
+  <div id="calculatorWre" hidden>
+    <div class="page-title"><h2>Wolf Run Eclipse</h2><div class="sub">Persistent-state EV calculator</div></div>
+    <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><label class="sub" for="wreMini">Mini</label><input id="wreMini" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Mini" oninput="renderWreCalculator()"><label class="sub" for="wreMinor">Minor</label><input id="wreMinor" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Minor" oninput="renderWreCalculator()"><label class="sub" for="wreMajor">Major</label><input id="wreMajor" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Major" oninput="renderWreCalculator()"><label class="sub" for="wreMega">Mega</label><input id="wreMega" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Mega" oninput="renderWreCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="wreEv" class="hero">—</div><div id="wreHint" class="sub">Enter the four visible persistent-state values. The current spreadsheet AT10 model uses Mini, Minor and Major; Mega is retained here for entry parity but does not change AT10.</div></section>
   </div>
 </section>
 
