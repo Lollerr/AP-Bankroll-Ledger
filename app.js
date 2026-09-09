@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.2.2';
+const APP_VERSION='8.2.3';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -394,9 +394,9 @@ function renderWreCalculator(){
   const coreValid=mini.valid&&minor.valid&&major.valid;
   if(!coreValid){out.textContent='—';out.className='hero';if(hint)hint.textContent='Enter valid non-negative Mini, Minor and Major values. Mega is optional because the sheet AT10 formula does not reference it.';return}
   const ev=wreEv(mini.value,minor.value,major.value);
-  out.textContent=(ev>0?'+':'')+ev.toFixed(6)+' units';
+  out.textContent=(ev>0?'+':'')+ev.toFixed(2);
   out.className='hero '+(ev>0?'good':ev<0?'bad':'');
-  if(hint)hint.textContent=(mega.valid?'All four machine values entered. ':'Mega may be entered for parity with the spreadsheet. ')+ 'AT10 uses Mini, Minor and Major only.';
+  if(hint)hint.textContent='';
 }
 function initials(name){const parts=String(name||'?').trim().split(/\s+/).filter(Boolean);return(parts.length>1?(parts[0][0]+parts[1][0]):parts[0]?.slice(0,2)||'?').toUpperCase()}
 function showPage(page){currentPage=['home','schedule','add','reports','calculators','more'].includes(page)?page:'home';for(const p of ['Home','Schedule','Add','Reports','Calculators','More'])$('page'+p).hidden=currentPage!==p.toLowerCase();for(const p of ['Home','Schedule','Add','Reports','More'])$('nav'+p).classList.toggle('active',currentPage===p.toLowerCase());if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();window.scrollTo({top:0,behavior:'instant'})}
