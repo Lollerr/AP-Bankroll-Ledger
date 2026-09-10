@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.2.7';
+const APP_VERSION='8.2.8';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -506,7 +506,7 @@ function supCalculate(s){
 function renderSupCalculator(){
   const host=$('supResults'),hint=$('supHint');if(!host)return;
   const s=supState();
-  if(!s){host.innerHTML='Enter valid values for bet, RTP and all five meters.';if(hint)hint.textContent='Meter ranges: Mega 250–349 · Grand 200–249 · Major 150–199 · Minor 100–149 · Mini 75–124.';return}
+  if(!s){host.innerHTML='Enter valid values for bet, RTP and all five meters.';if(hint)hint.textContent='';return}
   const rows=supCalculate(s);
   host.innerHTML=`<table class="data-table"><tr><th>Strategy</th><th>EV</th><th>EV%</th><th>Coin-in</th></tr>${rows.map(r=>`<tr><td>${r.label}</td><td class="${r.evUnits>0?'good':r.evUnits<0?'bad':''}">${r.evDollars>=0?'+':''}${money(r.evDollars)}</td><td class="${r.evUnits>0?'good':r.evUnits<0?'bad':''}">${r.pct.toFixed(1)}%</td><td>${money0(r.coinIn)}</td></tr>`).join('')}</table>`;
   const marginal=rows.some(r=>Math.abs(r.pct-100)<2);

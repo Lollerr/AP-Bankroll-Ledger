@@ -13,7 +13,7 @@
 @media (max-width:420px){.calculator-choice{min-height:80px;padding:14px 15px}.calculator-choice .calc-name{font-size:15px}.calculator-choice .calc-desc{font-size:11px}}
 </style></head>
 <body><main>
-<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.2.7</div></div><div id="syncBadge" class="badge">Starting…</div></header>
+<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.2.8</div></div><div id="syncBadge" class="badge">Starting…</div></header>
 <div id="status" class="status">Ready</div>
 
 <section id="pageHome" class="page">
@@ -69,15 +69,15 @@
   </div>
   <div id="calculatorWre" hidden>
     <div class="page-title"><h2>Wolf Run Eclipse</h2><div class="sub">Persistent-state EV calculator</div></div>
-    <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><label class="sub" for="wreMini">Mini</label><input id="wreMini" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Mini" oninput="renderWreCalculator()"><label class="sub" for="wreMinor">Minor</label><input id="wreMinor" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Minor" oninput="renderWreCalculator()"><label class="sub" for="wreMajor">Major</label><input id="wreMajor" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Major" oninput="renderWreCalculator()"><label class="sub" for="wreMega">Mega</label><input id="wreMega" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Mega" oninput="renderWreCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="wreEv" class="hero">—</div></section>
+    <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><input id="wreMini" aria-label="Mini" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Mini" oninput="renderWreCalculator()"><input id="wreMinor" aria-label="Minor" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Minor" oninput="renderWreCalculator()"><input id="wreMajor" aria-label="Major" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Major" oninput="renderWreCalculator()"><input id="wreMega" aria-label="Mega" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Mega" oninput="renderWreCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="wreEv" class="hero">—</div></section>
   </div>
   <div id="calculatorMtg" hidden>
     <div class="page-title"><h2>Magic Treasures Gold</h2><div class="sub">Persistent-state EV calculator</div></div>
-    <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><label class="sub" for="mtgGreen">Green</label><input id="mtgGreen" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Green" oninput="renderMtgCalculator()"><label class="sub" for="mtgPurple">Purple</label><input id="mtgPurple" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Purple" oninput="renderMtgCalculator()"><label class="sub" for="mtgGold">Gold</label><input id="mtgGold" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Gold" oninput="renderMtgCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="mtgEv" class="hero">—</div></section>
+    <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><input id="mtgGreen" aria-label="Green" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Green" oninput="renderMtgCalculator()"><input id="mtgPurple" aria-label="Purple" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Purple" oninput="renderMtgCalculator()"><input id="mtgGold" aria-label="Gold" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Gold" oninput="renderMtgCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="mtgEv" class="hero">—</div></section>
   </div>
   <div id="calculatorRegal" hidden>
     <div class="page-title"><h2>Regal Riches</h2><div class="sub">Persistent-state EV calculator</div></div>
-    <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><label class="sub" for="regalPurple">Purple</label><input id="regalPurple" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Purple" oninput="renderRegalCalculator()"><label class="sub" for="regalGreen">Green</label><input id="regalGreen" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Green" oninput="renderRegalCalculator()"><label class="sub" for="regalGold">Gold</label><input id="regalGold" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Gold" oninput="renderRegalCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="regalEv" class="hero">—</div><div class="sub spaced">110+ unless higher RTP</div></section>
+    <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><input id="regalPurple" aria-label="Purple" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Purple" oninput="renderRegalCalculator()"><input id="regalGreen" aria-label="Green" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Green" oninput="renderRegalCalculator()"><input id="regalGold" aria-label="Gold" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Gold" oninput="renderRegalCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="regalEv" class="hero">—</div><div class="sub spaced">110+ unless higher RTP</div></section>
   </div>
   <div id="calculatorSup" hidden>
     <div class="page-title"><h2>Stack Up Pays</h2><div class="sub">Five-meter deterministic EV model</div></div>
@@ -86,11 +86,11 @@
       <div class="section-kicker spaced">MACHINE VALUES</div>
       <label class="sub" for="supBet">Bet size</label><input id="supBet" type="number" inputmode="decimal" min="0.01" step="0.01" value="1" oninput="renderSupCalculator()">
       <label class="sub" for="supRtp">RTP setting (%)</label><input id="supRtp" type="number" inputmode="decimal" min="86.09" max="94.16" step="0.01" value="90" oninput="renderSupCalculator()">
-      <label class="sub" for="supMega">Mega · 250–349</label><input id="supMega" type="number" inputmode="numeric" min="250" max="349" step="1" placeholder="Mega" oninput="renderSupCalculator()">
-      <label class="sub" for="supGrand">Grand · 200–249</label><input id="supGrand" type="number" inputmode="numeric" min="200" max="249" step="1" placeholder="Grand" oninput="renderSupCalculator()">
-      <label class="sub" for="supMajor">Major · 150–199</label><input id="supMajor" type="number" inputmode="numeric" min="150" max="199" step="1" placeholder="Major" oninput="renderSupCalculator()">
-      <label class="sub" for="supMinor">Minor · 100–149</label><input id="supMinor" type="number" inputmode="numeric" min="100" max="149" step="1" placeholder="Minor" oninput="renderSupCalculator()">
-      <label class="sub" for="supMini">Mini · 75–124</label><input id="supMini" type="number" inputmode="numeric" min="75" max="124" step="1" placeholder="Mini" oninput="renderSupCalculator()">
+      <input id="supMega" aria-label="Mega" type="number" inputmode="numeric" min="250" max="349" step="1" placeholder="Mega" oninput="renderSupCalculator()">
+      <input id="supGrand" aria-label="Grand" type="number" inputmode="numeric" min="200" max="249" step="1" placeholder="Grand" oninput="renderSupCalculator()">
+      <input id="supMajor" aria-label="Major" type="number" inputmode="numeric" min="150" max="199" step="1" placeholder="Major" oninput="renderSupCalculator()">
+      <input id="supMinor" aria-label="Minor" type="number" inputmode="numeric" min="100" max="149" step="1" placeholder="Minor" oninput="renderSupCalculator()">
+      <input id="supMini" aria-label="Mini" type="number" inputmode="numeric" min="75" max="124" step="1" placeholder="Mini" oninput="renderSupCalculator()">
       <div class="section-kicker spaced">STOPPING STRATEGIES</div>
       <div id="supResults" class="sub">Enter all five meter values.</div>
       <div id="supHint" class="sub spaced">Deterministic model fitted to the collected Stack Up Pays simulations. Treat results very near 100% as marginal.</div>
@@ -107,4 +107,4 @@
 </section>
 </main>
 <nav class="bottom-nav" aria-label="Main navigation"><button id="navHome" class="nav-item active" onclick="showPage('home')"><span class="nav-icon">⌂</span><span>Home</span></button><button id="navSchedule" class="nav-item" onclick="showPage('schedule')"><span class="nav-icon">▦</span><span>Schedule</span></button><button id="navAdd" class="nav-item nav-add" onclick="showPage('add')"><span class="plus">+</span><span>Add Entry</span></button><button id="navReports" class="nav-item" onclick="showPage('reports')"><span class="nav-icon">▥</span><span>Reports</span></button><button id="navMore" class="nav-item" onclick="showPage('more')"><span class="nav-icon">•••</span><span>More</span></button></nav>
-<script src="config.js?v=8.2.7"></script><script src="app.js?v=8.2.7"></script></body></html>
+<script src="config.js?v=8.2.8"></script><script src="app.js?v=8.2.8"></script></body></html>
