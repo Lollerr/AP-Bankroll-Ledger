@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.3.0';
+const APP_VERSION='8.3.1';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -110,7 +110,14 @@ function viewData(){
 async function saveState(){await metaSet('localState',localState)}
 async function saveSyncKey(){
   const raw=$('syncKeyInput').value.trim();
-  if(raw.length<32){setStatus('Sync key looks too short. Paste the full private key.');return}
+  if(raw.length!==64){
+    setStatus(`Private sync key must be exactly 64 characters. This entry has ${raw.length}.`);
+    return;
+  }
+  if(!/^[0-9a-f]{64}$/i.test(raw)){
+    setStatus('Private sync key contains invalid characters. Use only 0-9 and A-F, with no spaces, quotes, hyphens, or punctuation.');
+    return;
+  }
   if(!endpointConfigured()){setStatus('Cloud endpoint is not configured.');return}
   if(!navigator.onLine){setStatus('Connect to the internet before saving or changing the private sync key so it can be verified.');return}
   if(syncRunning){setStatus('A sync is already in progress. Try again in a moment.');return}
