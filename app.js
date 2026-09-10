@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.2.8';
+const APP_VERSION='8.2.9';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -117,9 +117,16 @@ async function saveSyncKey(){
   syncRunning=true;cloudError='';setStatus('Verifying private sync key…');render();
   const previousKey=syncKey;
   try{
-    await bootstrapRemote(raw);
+    await verifySyncKeyRemote(raw);
     syncKey=raw;await metaSet('syncKey',syncKey);$('syncKeyInput').value='';
-    setStatus('Private sync key verified and saved on this device. Google ledger data loaded successfully.');
+    setStatus('Private sync key verified. Loading Google ledger data…');render();
+    try{
+      await bootstrapRemote(raw);
+      setStatus('Private sync key verified and saved on this device. Google ledger data loaded successfully.');
+    }catch(loadErr){
+      cloudError=loadErr.message||'Initial ledger load failed';
+      setStatus('Private sync key verified and saved. Initial ledger load failed: '+cloudError+'. Use SYNC to retry.');
+    }
   }catch(err){
     syncKey=previousKey;cloudError=err.message||'Private sync key verification failed';
     setStatus(cloudError==='Private sync key was rejected'?'Private sync key rejected. Nothing was changed on this device.':'Key verification failed: '+cloudError);
@@ -604,6 +611,15 @@ async function cloudRequest(path,{method='GET',body=null,timeout=18000,keyOverri
     if(err instanceof TypeError) throw new Error('Cloud API could not be reached');
     throw err;
   }finally{clearTimeout(timer)}
+}
+async function verifySyncKeyRemote(keyOverride=syncKey){
+  if(!endpointConfigured()||!keyOverride||!navigator.onLine) return false;
+  const data=await cloudRequest('/verify',{keyOverride,timeout:12000});
+  if(!data?.ok){
+    if(data?.error==='UNAUTHORIZED') throw new Error('Private sync key was rejected');
+    throw new Error(data?.error?('Key verification failed: '+data.error):'Key verification failed');
+  }
+  return true;
 }
 async function bootstrapRemote(keyOverride=syncKey){
   if(!endpointConfigured()||!keyOverride||!navigator.onLine) return false;
