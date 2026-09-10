@@ -13,7 +13,7 @@
 @media (max-width:420px){.calculator-choice{min-height:80px;padding:14px 15px}.calculator-choice .calc-name{font-size:15px}.calculator-choice .calc-desc{font-size:11px}}
 </style></head>
 <body><main>
-<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.2.6</div></div><div id="syncBadge" class="badge">Starting…</div></header>
+<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.2.7</div></div><div id="syncBadge" class="badge">Starting…</div></header>
 <div id="status" class="status">Ready</div>
 
 <section id="pageHome" class="page">
@@ -59,6 +59,7 @@
       <button class="calculator-choice" onclick="openCalculator('phoenix')"><span class="calc-copy"><span class="calc-name">Phoenix Link</span><span class="calc-desc">Aristocrat Gaming · probable EV by denomination</span></span><span class="calc-arrow">›</span></button>
       <button class="calculator-choice" onclick="openCalculator('wre')"><span class="calc-copy"><span class="calc-name">Wolf Run Eclipse</span><span class="calc-desc">Persistent-state EV from Mini / Minor / Major / Mega values</span></span><span class="calc-arrow">›</span></button>
       <button class="calculator-choice" onclick="openCalculator('mtg')"><span class="calc-copy"><span class="calc-name">Magic Treasures Gold</span><span class="calc-desc">Persistent-state EV from Green / Purple / Gold values</span></span><span class="calc-arrow">›</span></button>
+      <button class="calculator-choice" onclick="openCalculator('regal')"><span class="calc-copy"><span class="calc-name">Regal Riches</span><span class="calc-desc">Persistent-state EV from Purple / Green / Gold values</span></span><span class="calc-arrow">›</span></button>
       <button class="calculator-choice" onclick="openCalculator('sup')"><span class="calc-copy"><span class="calc-name">Stack Up Pays</span><span class="calc-desc">Five-meter free-games EV and stopping strategies</span></span><span class="calc-arrow">›</span></button>
     </div></section>
   </div>
@@ -73,6 +74,10 @@
   <div id="calculatorMtg" hidden>
     <div class="page-title"><h2>Magic Treasures Gold</h2><div class="sub">Persistent-state EV calculator</div></div>
     <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><label class="sub" for="mtgGreen">Green</label><input id="mtgGreen" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Green" oninput="renderMtgCalculator()"><label class="sub" for="mtgPurple">Purple</label><input id="mtgPurple" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Purple" oninput="renderMtgCalculator()"><label class="sub" for="mtgGold">Gold</label><input id="mtgGold" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Gold" oninput="renderMtgCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="mtgEv" class="hero">—</div></section>
+  </div>
+  <div id="calculatorRegal" hidden>
+    <div class="page-title"><h2>Regal Riches</h2><div class="sub">Persistent-state EV calculator</div></div>
+    <section class="card"><button class="small" onclick="showCalculatorsHome()">BACK TO CALCULATORS</button><div class="section-kicker spaced">MACHINE VALUES</div><label class="sub" for="regalPurple">Purple</label><input id="regalPurple" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Purple" oninput="renderRegalCalculator()"><label class="sub" for="regalGreen">Green</label><input id="regalGreen" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Green" oninput="renderRegalCalculator()"><label class="sub" for="regalGold">Gold</label><input id="regalGold" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Gold" oninput="renderRegalCalculator()"><div class="section-kicker spaced">PROBABLE EV</div><div id="regalEv" class="hero">—</div><div class="sub spaced">110+ unless higher RTP</div></section>
   </div>
   <div id="calculatorSup" hidden>
     <div class="page-title"><h2>Stack Up Pays</h2><div class="sub">Five-meter deterministic EV model</div></div>
@@ -102,4 +107,4 @@
 </section>
 </main>
 <nav class="bottom-nav" aria-label="Main navigation"><button id="navHome" class="nav-item active" onclick="showPage('home')"><span class="nav-icon">⌂</span><span>Home</span></button><button id="navSchedule" class="nav-item" onclick="showPage('schedule')"><span class="nav-icon">▦</span><span>Schedule</span></button><button id="navAdd" class="nav-item nav-add" onclick="showPage('add')"><span class="plus">+</span><span>Add Entry</span></button><button id="navReports" class="nav-item" onclick="showPage('reports')"><span class="nav-icon">▥</span><span>Reports</span></button><button id="navMore" class="nav-item" onclick="showPage('more')"><span class="nav-icon">•••</span><span>More</span></button></nav>
-<script src="config.js?v=8.2.6"></script><script src="app.js?v=8.2.6"></script></body></html>
+<script src="config.js?v=8.2.7"></script><script src="app.js?v=8.2.7"></script></body></html>
