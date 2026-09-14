@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.5.7';
+const APP_VERSION='8.5.8';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -753,18 +753,19 @@ function renderScheduleDate(d){
     for(const x of rows){
       const amt=x.unknown?'IDK':money0(x.amount);
       const detail=[x.time,x.card].filter(Boolean).map(esc).join(' · ');
-      html+=`<div class="offer-row">${casinoIconSvg(x.location)}<div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${detail||'No time/card detail'}${x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount)?` · FP ${esc(x.fpRaw)}`:''}</div></div><div class="offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
+      const cardMeta=[x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean).join(' · ');
+      html+=`<div class="offer-row">${casinoIconSvg(x.location)}<div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${detail||'No time/card detail'}${x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount)?` · FP ${esc(x.fpRaw)}`:''}</div>${cardMeta?`<div class="offer-detail">${cardMeta}</div>`:''}</div><div class="offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
     }
     html+='</section>';
   }
-  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown / To Be Determined</div><section class="day-group unknown-card"><div class="unknown-title day-head"><span>FP AMOUNT UNKNOWN</span><span>${d.unknown.length}</span></div>`;for(const x of d.unknown){html+=`<div class="offer-row"><span class="casino-icon casino-generic"><span class="casino-icon-text">?</span></span><div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')} · ${esc(x.time||'No time')}</div></div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
+  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown / To Be Determined</div><section class="day-group unknown-card"><div class="unknown-title day-head"><span>FP AMOUNT UNKNOWN</span><span>${d.unknown.length}</span></div>`;for(const x of d.unknown){const meta=[x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean).join(' · ');html+=`<div class="offer-row"><span class="casino-icon casino-generic"><span class="casino-icon-text">?</span></span><div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')} · ${esc(x.time||'No time')}</div>${meta?`<div class="offer-detail">${meta}</div>`:''}</div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
   $('scheduleContent').innerHTML=html||'<div class="schedule-empty">No entries for this month.</div>';
 }
 function renderScheduleCasino(d){
   let html='<section class="casino-breakdown"><div class="breakdown-head"><div>CASINO / LOCATION</div><div class="num">OFFERS</div><div class="num">TOTAL FP</div><div class="num">15%</div></div>';
   for(const x of d.breakdown||[]){html+=`<div class="breakdown-row"><div class="breakdown-location-wrap">${casinoIconSvg(x.location,true)}<div class="breakdown-location">${esc(x.location)}${x.unknownCount?` <span class="pill">${x.unknownCount} IDK</span>`:''}</div></div><div class="num">${x.offers}</div><div class="num">${money0(x.total)}</div><div class="num">${money(x.pay)}</div></div>`}
   html+='</section>';
-  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown Offers</div><section class="day-group unknown-card">`;for(const x of d.unknown){html+=`<div class="offer-row"><span class="casino-icon casino-generic"><span class="casino-icon-text">?</span></span><div><div class="offer-location">${esc(x.location)}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')}</div></div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
+  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown Offers</div><section class="day-group unknown-card">`;for(const x of d.unknown){const meta=[x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean).join(' · ');html+=`<div class="offer-row"><span class="casino-icon casino-generic"><span class="casino-icon-text">?</span></span><div><div class="offer-location">${esc(x.location)}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')}</div>${meta?`<div class="offer-detail">${meta}</div>`:''}</div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
   $('scheduleContent').innerHTML=html;
 }
 function renderScheduleCalendar(d){
