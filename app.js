@@ -1,11 +1,11 @@
 'use strict';
-const APP_VERSION='8.5.3';
+const APP_VERSION='8.5.4';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
 let actionLocked=false,syncRunning=false;
 let bootstrapReady=false,cloudError='';
-let currentPage='home',scheduleView='date',entryView='session',reportView='overview';
+let currentPage='home',scheduleView='date',entryView='session',reportView='overview',selectedFpCollectionId='';
 
 const $=id=>document.getElementById(id);
 const money=n=>'$'+Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -72,7 +72,7 @@ async function refreshEvents(){eventsCache=await reqP(store('events').getAll());
 async function markSynced(ids){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const id of ids){const ev=await reqP(s.get(id));if(ev){ev.synced=true;ev.syncedAt=Date.now();s.put(ev)}}await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 async function deleteSynced(){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const ev of eventsCache) if(ev.synced) s.delete(ev.id);await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 
-function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},scheduleData:{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]},reports:{sessions:[],freePlay:[],payments:[],reconciliations:[],corrections:[],adjustments:[],scheduleSnapshots:[]},lastReload:null,recent:[]}}
+function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},scheduleData:{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]},reports:{sessions:[],freePlay:[],freePlayCoinIn:[],payments:[],reconciliations:[],corrections:[],adjustments:[],scheduleSnapshots:[]},lastReload:null,recent:[]}}
 function defaultState(){return {active:null,lastReload:null}}
 function uuid(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}
 function event(type,payload){return {id:uuid(),type,ts:new Date().toISOString(),createdAt:Date.now(),deviceId,payload,synced:false}}
@@ -89,6 +89,9 @@ function viewData(){
     if(e.type==='cashout') expected+=Number(e.payload.net)||0;
     if(e.type==='freeplay'){
       const c=Number(e.payload.cashOut)||0; expected+=c; fpCash+=c; fpEarned+=round2(c*.15);
+    }
+    if(e.type==='fp_coinin'){
+      expected+=Number(e.payload.result)||0;
     }
     if(e.type==='fp_settlement'){
       const amt=Number(e.payload.amount)||0;
@@ -108,6 +111,9 @@ function viewData(){
       if(e.payload.targetType==='freeplay'){
         const delta=round2((Number(a.cashOut)||0)-(Number(b.cashOut)||0));
         expected+=delta;fpCash+=delta;fpEarned+=round2(delta*.15);
+      }
+      if(e.payload.targetType==='fp_coinin'){
+        expected+=round2((Number(a.result)||0)-(Number(b.result)||0));
       }
     }
   }
@@ -213,6 +219,69 @@ async function saveFreePlay(){
   const ev=event('freeplay',{casino,playerName:player,faceValue:face,cashOut:cash});
   await commitLocal(ev,()=>{$('fpPlayerName').value='';$('fpFaceValue').value='';$('fpCashOut').value=''},'Free play recorded');
 }
+
+function freePlayCollections(){
+  const map=new Map();
+  const reports=baseline.reports||{};
+  for(const x of (reports.freePlay||[])){
+    const id=String(x.id||'');if(!id)continue;
+    map.set(id,{id,ts:x.ts||'',casino:x.casino||'',playerName:x.playerName||'',faceValue:Number(x.faceValue)||0,cashOut:Number(x.cashOut)||0,
+      extraCoinIn:Number(x.extraCoinIn)||0,coinInTierCredits:Number(x.coinInTierCredits)||0,coinInResult:Number(x.coinInResult)||0,coinInCount:Number(x.coinInCount)||0});
+  }
+  for(const e of pending()){
+    const p=e.payload||{};
+    if(e.type==='freeplay'){
+      map.set(e.id,{id:e.id,ts:e.ts,casino:p.casino||'',playerName:p.playerName||'',faceValue:Number(p.faceValue)||0,cashOut:Number(p.cashOut)||0,extraCoinIn:0,coinInTierCredits:0,coinInResult:0,coinInCount:0});
+    }else if(e.type==='fp_coinin'){
+      const x=map.get(String(p.conversionId||''));
+      if(x){
+        x.extraCoinIn=round2((Number(x.extraCoinIn)||0)+(Number(p.extraCoinIn)||0));
+        x.coinInTierCredits=round2((Number(x.coinInTierCredits)||0)+(Number(p.tierCredits)||0));
+        x.coinInResult=round2((Number(x.coinInResult)||0)+(Number(p.result)||0));
+        x.coinInCount=(Number(x.coinInCount)||0)+1;
+      }
+    }else if(e.type==='correction'&&e.payload.targetType==='freeplay'){
+      const x=map.get(String(e.payload.targetId||''));if(x)Object.assign(x,e.payload.after||{});
+    }else if(e.type==='correction'&&e.payload.targetType==='fp_coinin'){
+      const before=e.payload.before||{},after=e.payload.after||{},x=map.get(String(after.conversionId||before.conversionId||''));
+      if(x){
+        x.extraCoinIn=round2((Number(x.extraCoinIn)||0)+(Number(after.extraCoinIn)||0)-(Number(before.extraCoinIn)||0));
+        x.coinInTierCredits=round2((Number(x.coinInTierCredits)||0)+(Number(after.tierCredits)||0)-(Number(before.tierCredits)||0));
+        x.coinInResult=round2((Number(x.coinInResult)||0)+(Number(after.result)||0)-(Number(before.result)||0));
+      }
+    }
+  }
+  return [...map.values()].sort((a,b)=>String(b.ts||'').localeCompare(String(a.ts||'')));
+}
+function renderFpCollections(){
+  const list=$('fpCollectionList');if(!list)return;
+  const rows=freePlayCollections().slice(0,20);
+  if(!rows.length){list.innerHTML='<div class="sub">No free-play collections recorded yet.</div>';return}
+  list.innerHTML=rows.map(x=>`<div class="audit-item"><b>${esc(x.playerName)}</b> · ${esc(x.casino)}<div class="sub">${esc((x.ts||'').slice(0,10))} · FP ${money0(x.faceValue)} → ${money0(x.cashOut)} · Extra Coin-In ${Number(x.extraCoinIn||0).toLocaleString()} · Coin-In P/L <span class="${Number(x.coinInResult)>=0?'good':'bad'}">${money(x.coinInResult)}</span>${Number(x.coinInCount)?` · ${x.coinInCount} play${Number(x.coinInCount)===1?'':'s'}`:''}</div><button class="small" onclick="openFpCoinIn('${x.id}')">ADD COIN-IN PLAY</button></div>`).join('');
+}
+function openFpCoinIn(id){
+  const x=freePlayCollections().find(v=>String(v.id)===String(id));if(!x){setStatus('Free-play collection not found.');return}
+  selectedFpCollectionId=String(id);
+  $('fpCoinInCard').hidden=false;
+  $('fpCoinInParent').textContent=x.playerName;
+  $('fpCoinInParentDetail').textContent=`${x.casino} · FP ${money0(x.faceValue)} → ${money0(x.cashOut)} · Current coin-in P/L ${money(x.coinInResult)}`;
+  $('fpExtraCoinIn').value='';$('fpCoinInTierCredits').value='';$('fpCoinInResult').value='';$('fpCoinInNote').value='';
+  $('fpCoinInResult').focus();
+}
+function cancelFpCoinIn(){
+  selectedFpCollectionId='';$('fpCoinInCard').hidden=true;
+}
+async function saveFpCoinIn(){
+  const x=freePlayCollections().find(v=>String(v.id)===String(selectedFpCollectionId));
+  if(!x){setStatus('Select a free-play collection first.');return}
+  const extraRaw=$('fpExtraCoinIn').value.trim().replace(/,/g,''),tierRaw=$('fpCoinInTierCredits').value.trim().replace(/,/g,''),resultRaw=$('fpCoinInResult').value.trim().replace(/,/g,'');
+  const extra=extraRaw===''?0:Number(extraRaw),tier=tierRaw===''?0:Number(tierRaw),result=Number(resultRaw),note=$('fpCoinInNote').value.trim();
+  if(!Number.isFinite(extra)||extra<0){setStatus('Extra Coin-In must be zero or more.');return}
+  if(!Number.isFinite(tier)||tier<0){setStatus('Tier Credits must be zero or more.');return}
+  if(resultRaw===''||!Number.isFinite(result)){setStatus('Enter the win / loss result. Use 0 for a break-even play.');return}
+  const ev=event('fp_coinin',{conversionId:x.id,casino:x.casino,playerName:x.playerName,extraCoinIn:round2(extra),tierCredits:round2(tier),result:round2(result),note});
+  await commitLocal(ev,()=>{selectedFpCollectionId='';$('fpCoinInCard').hidden=true;$('fpExtraCoinIn').value='';$('fpCoinInTierCredits').value='';$('fpCoinInResult').value='';$('fpCoinInNote').value=''},'Coin-in play added to free-play collection');
+}
 async function settleFreePlay(){
   const v=viewData(),due=v.fpPayable;
   if(due<=0){setStatus('There is no free-play payment balance due.');return}
@@ -308,6 +377,14 @@ function recentEntries(){
       faceValue:Number(x.faceValue)||0,cashOut:Number(x.cashOut)||0
     });
   }
+  for(const x of (reports.freePlayCoinIn||[])){
+    const id=String(x.id||'');
+    if(!id) continue;
+    map.set('fp_coinin|'+id,{
+      targetType:'fp_coinin',targetId:id,ts:x.ts||'',conversionId:String(x.conversionId||''),casino:x.casino||'',playerName:x.playerName||'',
+      extraCoinIn:Number(x.extraCoinIn)||0,tierCredits:Number(x.tierCredits)||0,result:Number(x.result)||0,note:x.note||''
+    });
+  }
 
   // Merge the server's small recent payload without degrading a closed
   // session's precise cash-out timestamp from report history. Older builds
@@ -335,6 +412,8 @@ function recentEntries(){
       const k='session|'+p.sessionId;let x=map.get(k);if(!x)x={targetType:'session',targetId:p.sessionId,casino:p.casino,playerName:p.playerName,initial:Math.max(0,(Number(p.totalDeployed)||0)),reloads:0,totalDeployed:Number(p.totalDeployed)||0,handpays:Number(p.handpays)||0,tierCredits:Number(p.tierCredits)||0};x.final=Number(p.amount)||0;x.totalDeployed=Number(p.totalDeployed)||x.totalDeployed||0;x.handpays=Number(p.handpays)||Number(x.handpays)||0;x.tierCredits=Number(p.tierCredits)||0;x.net=Number(p.net)||round2(x.final+x.handpays-x.totalDeployed);x.status='CLOSED';x.ts=e.ts;map.set(k,x);
     }else if(e.type==='freeplay'){
       map.set('freeplay|'+e.id,{targetType:'freeplay',targetId:e.id,ts:e.ts,casino:p.casino,playerName:p.playerName,faceValue:Number(p.faceValue)||0,cashOut:Number(p.cashOut)||0});
+    }else if(e.type==='fp_coinin'){
+      map.set('fp_coinin|'+e.id,{targetType:'fp_coinin',targetId:e.id,ts:e.ts,conversionId:String(p.conversionId||''),casino:p.casino||'',playerName:p.playerName||'',extraCoinIn:Number(p.extraCoinIn)||0,tierCredits:Number(p.tierCredits)||0,result:Number(p.result)||0,note:p.note||''});
     }else if(e.type==='correction'){
       const k=p.targetType+'|'+p.targetId,x=map.get(k);if(x){Object.assign(x,p.after||{});x.ts=e.ts;}
     }
@@ -344,16 +423,18 @@ function recentEntries(){
 function correctionLabel(x){
   const d=x.ts?new Date(x.ts).toLocaleDateString([], {month:'numeric',day:'numeric'}):'';
   if(x.targetType==='session') return `${d} · PLAY · ${x.casino} · ${x.playerName} · ${x.status==='OPEN'?'OPEN':money(x.net)+' P/L'}`;
+  if(x.targetType==='fp_coinin') return `${d} · COIN-IN · ${x.casino} · ${x.playerName} · ${money(x.result)}`;
   return `${d} · FP · ${x.casino} · ${x.playerName} · ${money(x.cashOut)}`;
 }
 function renderCorrectionPicker(){
   const sel=$('correctionTarget'),items=recentEntries(),old=sel.value;
   const sessionCount=items.filter(x=>x.targetType==='session').length;
   const fpCount=items.filter(x=>x.targetType==='freeplay').length;
+  const coinCount=items.filter(x=>x.targetType==='fp_coinin').length;
   const detail=$('correctionSourceDetail');
-  if(detail) detail.textContent=`${items.length} correctable entries loaded · ${sessionCount} sessions · ${fpCount} free play`;
+  if(detail) detail.textContent=`${items.length} correctable entries loaded · ${sessionCount} sessions · ${fpCount} free play · ${coinCount} coin-in plays`;
   sel.innerHTML='';
-  if(!items.length){sel.add(new Option('No recent entries available',''));$('correctionEmpty').hidden=false;$('sessionCorrection').hidden=true;$('fpCorrection').hidden=true;return}
+  if(!items.length){sel.add(new Option('No recent entries available',''));$('correctionEmpty').hidden=false;$('sessionCorrection').hidden=true;$('fpCorrection').hidden=true;$('fpCoinInCorrection').hidden=true;return}
   $('correctionEmpty').hidden=true;
   sel.add(new Option('Select an entry to correct…',''));
   for(const x of items) sel.add(new Option(correctionLabel(x),x.targetType+'|'+x.targetId));
@@ -381,14 +462,17 @@ function selectedCorrection(){
   return recentEntries().find(x=>x.targetType===type&&String(x.targetId)===id)||null;
 }
 function loadCorrectionTarget(){
-  const x=selectedCorrection();$('sessionCorrection').hidden=!x||x.targetType!=='session';$('fpCorrection').hidden=!x||x.targetType!=='freeplay';
+  const x=selectedCorrection();$('sessionCorrection').hidden=!x||x.targetType!=='session';$('fpCorrection').hidden=!x||x.targetType!=='freeplay';$('fpCoinInCorrection').hidden=!x||x.targetType!=='fp_coinin';
   if(!x)return;
   if(x.targetType==='session'){
     $('corrSessionCasino').value=x.casino;$('corrSessionPlayer').value=x.playerName;$('corrInitial').value=x.initial;$('corrReloads').value=x.reloads;$('corrFinal').value=x.final;$('corrTierCredits').value=Number(x.tierCredits)||0;
     $('corrSessionHandpays').textContent='Handpays recorded: '+money(Number(x.handpays)||0);
     $('corrFinal').disabled=x.status==='OPEN';$('corrTierCredits').disabled=x.status==='OPEN';$('corrSessionSummary').textContent=x.status==='OPEN'?'Active session · final amount and Tier Credits remain unavailable until session is closed.':'Current P/L '+money(x.net)+' · deployed '+money(x.totalDeployed)+' · Tier Credits '+(Number(x.tierCredits)||0).toLocaleString();
-  }else{
+  }else if(x.targetType==='freeplay'){
     $('corrFpCasino').value=x.casino;$('corrFpPlayer').value=x.playerName;$('corrFpFace').value=x.faceValue;$('corrFpCash').value=x.cashOut;
+  }else{
+    $('corrFpCoinInParent').textContent=`${x.playerName} · ${x.casino}`;
+    $('corrFpCoinInExtra').value=Number(x.extraCoinIn)||0;$('corrFpCoinInTier').value=Number(x.tierCredits)||0;$('corrFpCoinInResult').value=Number(x.result)||0;$('corrFpCoinInNote').value=x.note||'';
   }
   $('correctionReason').value='';
 }
@@ -406,13 +490,20 @@ async function saveCorrection(){
     if(x.status!=='OPEN'&&(!Number.isFinite(tierCredits)||tierCredits<0)){setStatus('Enter valid Tier Credits.');return}
     const totalDeployed=round2(initial+reloads),handpays=Number(x.handpays)||0,net=x.status==='OPEN'?round2(handpays-totalDeployed):round2(final+handpays-totalDeployed);
     after={casino,playerName:player,initial,reloads,totalDeployed,handpays,tierCredits:round2(tierCredits),final,net,status:x.status};
-  }else{
+  }else if(x.targetType==='freeplay'){
     const casino=$('corrFpCasino').value,player=$('corrFpPlayer').value.trim();
     const ar=$('corrFpFace').value.trim(),cr=$('corrFpCash').value.trim(),faceValue=Number(ar),cashOut=Number(cr);
     if(!player){setStatus('Enter the name on the player card.');return}
     if(ar===''||!Number.isFinite(faceValue)||faceValue<=0){setStatus('Enter a valid free-play face value.');return}
     if(cr===''||!Number.isFinite(cashOut)||cashOut<0){setStatus('Enter a valid actual cash amount.');return}
     after={casino,playerName:player,faceValue,cashOut};
+  }else{
+    const er=$('corrFpCoinInExtra').value.trim().replace(/,/g,''),tr=$('corrFpCoinInTier').value.trim().replace(/,/g,''),rr=$('corrFpCoinInResult').value.trim().replace(/,/g,'');
+    const extraCoinIn=er===''?0:Number(er),tierCredits=tr===''?0:Number(tr),result=Number(rr),note=$('corrFpCoinInNote').value.trim();
+    if(!Number.isFinite(extraCoinIn)||extraCoinIn<0){setStatus('Enter valid Extra Coin-In.');return}
+    if(!Number.isFinite(tierCredits)||tierCredits<0){setStatus('Enter valid Tier Credits.');return}
+    if(rr===''||!Number.isFinite(result)){setStatus('Enter a valid coin-in result.');return}
+    after={conversionId:x.conversionId,casino:x.casino,playerName:x.playerName,extraCoinIn:round2(extraCoinIn),tierCredits:round2(tierCredits),result:round2(result),note};
   }
   const before={...x};delete before.targetType;delete before.targetId;delete before.ts;
   const changed=Object.keys(after).some(k=>String(after[k])!==String(before[k]));if(!changed){setStatus('Nothing changed.');return}
@@ -441,7 +532,7 @@ function render(){
   $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'good':'bad');$('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
   const online=navigator.onLine,p=v.pending,badge=$('syncBadge');if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP'}else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}else if(cloudError&&!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC ERROR'}else if(!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC NEEDED'}else{badge.className='badge '+(!online||p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
   const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';const backup=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required.':!cloudLoaded?(cloudError?`Ledger data unavailable — ${cloudError}.`:'Ledger data unavailable — sync required.'):p?`${p} local entr${p===1?'y':'ies'} awaiting backup · Last sync ${last}`:`All local entries backed up · Last sync ${last}`;$('backupDetail').textContent=backup;$('homeBackup').textContent=backup;$('keyDetail').textContent=syncKey?(cloudLoaded?'Private sync key verified on this device.':'A private sync key is stored, but it has not successfully loaded the ledger yet.'):'No private sync key saved on this device.';
-  renderCorrectionPicker();renderBankrollMovement();if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();
+  renderCorrectionPicker();renderBankrollMovement();renderFpCollections();if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();
 }
 function esc(v){return String(v??'').replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
 function money0(n){return '$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0})}
@@ -618,19 +709,19 @@ function openCalculator(name){showPage('calculators');$('calculatorHub').hidden=
 function goAdd(view){showPage('add');setEntryView(view)}
 function setEntryView(view){entryView=['session','freeplay','reconcile'].includes(view)?view:'session';$('entrySession').hidden=entryView!=='session';$('entryFreeplay').hidden=entryView!=='freeplay';$('entryReconcile').hidden=entryView!=='reconcile';$('entrySessionTab').classList.toggle('active',entryView==='session');$('entryFpTab').classList.toggle('active',entryView==='freeplay');$('entryReconTab').classList.toggle('active',entryView==='reconcile')}
 function setReportView(view){reportView=['overview','casino','fp','audit'].includes(view)?view:'overview';for(const x of ['Overview','Casino','Fp','Audit'])$('report'+x+'Tab').classList.toggle('active',reportView===x.toLowerCase());renderReports()}
-function reportData(){return baseline.reports||{sessions:[],freePlay:[],payments:[],reconciliations:[],corrections:[],adjustments:[],scheduleSnapshots:[]}}
+function reportData(){return baseline.reports||{sessions:[],freePlay:[],freePlayCoinIn:[],payments:[],reconciliations:[],corrections:[],adjustments:[],scheduleSnapshots:[]}}
 function dateOf(x){const d=new Date(x);return isNaN(d)?null:d}
-function reportFiltered(){const r=reportData(),mode=$('reportPeriod')?.value||'month',now=new Date();let start=null;if(mode==='month')start=new Date(now.getFullYear(),now.getMonth(),1);else if(mode==='30')start=new Date(now.getTime()-30*864e5);else if(mode==='ytd')start=new Date(now.getFullYear(),0,1);const keep=x=>!start||((dateOf(x.ts||x.date||x.timestamp)||new Date(0))>=start);return {...r,sessions:(r.sessions||[]).filter(keep),freePlay:(r.freePlay||[]).filter(keep),payments:(r.payments||[]).filter(keep),reconciliations:(r.reconciliations||[]).filter(keep),corrections:(r.corrections||[]).filter(keep),adjustments:(r.adjustments||[]).filter(keep)}}
+function reportFiltered(){const r=reportData(),mode=$('reportPeriod')?.value||'month',now=new Date();let start=null;if(mode==='month')start=new Date(now.getFullYear(),now.getMonth(),1);else if(mode==='30')start=new Date(now.getTime()-30*864e5);else if(mode==='ytd')start=new Date(now.getFullYear(),0,1);const keep=x=>!start||((dateOf(x.ts||x.date||x.timestamp)||new Date(0))>=start);return {...r,sessions:(r.sessions||[]).filter(keep),freePlay:(r.freePlay||[]).filter(keep),freePlayCoinIn:(r.freePlayCoinIn||[]).filter(keep),payments:(r.payments||[]).filter(keep),reconciliations:(r.reconciliations||[]).filter(keep),corrections:(r.corrections||[]).filter(keep),adjustments:(r.adjustments||[]).filter(keep)}}
 function sum(a,f){return round2(a.reduce((s,x)=>s+(Number(f(x))||0),0))}
 function groupBy(a,key){const m={};for(const x of a){const k=key(x)||'Unknown';(m[k]||(m[k]=[])).push(x)}return m}
 function monthKey(ts){const d=dateOf(ts);return d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`:''}
 function chartSvg(points){if(points.length<2)return '<div class="sub">Not enough history yet.</div>';const vals=points.map(x=>x.v),mn=Math.min(...vals),mx=Math.max(...vals),rng=Math.max(1,mx-mn);const coords=points.map((x,i)=>`${(i/(points.length-1))*100},${95-((x.v-mn)/rng)*80}`).join(' ');return `<svg class="trend" viewBox="0 0 100 100" preserveAspectRatio="none"><line class="axis" x1="0" y1="95" x2="100" y2="95"/><polyline points="${coords}"/></svg><div class="sub">${money(mn)} low · ${money(mx)} high</div>`}
-function renderReports(){if(!$('reportsContent'))return;const r=reportFiltered(),sessions=(r.sessions||[]).filter(x=>x.status==='CLOSED'),fp=r.freePlay||[];const net=sum(sessions,x=>x.net),deployed=sum(sessions,x=>x.totalDeployed),handpays=sum(sessions,x=>x.handpays),tierCredits=sum(sessions,x=>x.tierCredits),wins=sessions.filter(x=>Number(x.net)>0),losses=sessions.filter(x=>Number(x.net)<0),fpFace=sum(fp,x=>x.faceValue),fpCash=sum(fp,x=>x.cashOut),conv=fpFace?fpCash/fpFace:0;
+function renderReports(){if(!$('reportsContent'))return;const r=reportFiltered(),sessions=(r.sessions||[]).filter(x=>x.status==='CLOSED'),fp=r.freePlay||[],fpCoinIn=r.freePlayCoinIn||[];const coinInResult=sum(fpCoinIn,x=>x.result),coinInExtra=sum(fpCoinIn,x=>x.extraCoinIn),coinInTier=sum(fpCoinIn,x=>x.tierCredits),net=sum(sessions,x=>x.net),deployed=sum(sessions,x=>x.totalDeployed),handpays=sum(sessions,x=>x.handpays),tierCredits=sum(sessions,x=>x.tierCredits),wins=sessions.filter(x=>Number(x.net)>0),losses=sessions.filter(x=>Number(x.net)<0),fpFace=sum(fp,x=>x.faceValue),fpCash=sum(fp,x=>x.cashOut),conv=fpFace?fpCash/fpFace:0;
  let html='';if(reportView==='overview'){const best=sessions.length?Math.max(...sessions.map(x=>Number(x.net)||0)):0,worst=sessions.length?Math.min(...sessions.map(x=>Number(x.net)||0)):0;html=`<div class="report-kpis"><div class="report-kpi"><span>NET AP P/L</span><b class="${net>=0?'good':'bad'}">${money(net)}</b></div><div class="report-kpi"><span>SESSIONS</span><b>${sessions.length}</b></div><div class="report-kpi"><span>WIN RATE</span><b>${sessions.length?(wins.length/sessions.length*100).toFixed(1):'0.0'}%</b></div><div class="report-kpi"><span>FP CASH</span><b>${money(fpCash)}</b></div></div><section class="report-card"><h3>Session Analytics</h3><table class="data-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total deployed</td><td>${money(deployed)}</td></tr><tr><td>Handpays received</td><td>${money(handpays)}</td></tr><tr><td>Tier Credits recorded</td><td>${tierCredits.toLocaleString(undefined,{maximumFractionDigits:2})}</td></tr><tr><td>P/L per $1,000 deployed</td><td>${deployed?money(net/deployed*1000):'$0.00'}</td></tr><tr><td>Average session</td><td>${sessions.length?money(net/sessions.length):'$0.00'}</td></tr><tr><td>Best session</td><td class="good">${money(best)}</td></tr><tr><td>Worst session</td><td class="bad">${money(worst)}</td></tr><tr><td>Winning / losing</td><td>${wins.length} / ${losses.length}</td></tr></table></section>`;
  const months=groupBy(sessions,x=>monthKey(x.ts||x.date));const fpMonths=groupBy(fp,x=>monthKey(x.ts));const keys=[...new Set([...Object.keys(months),...Object.keys(fpMonths)])].filter(Boolean).sort().reverse();html+=`<section class="report-card"><h3>Monthly Summary</h3><table class="data-table"><tr><th>Month</th><th>AP P/L</th><th>FP Cash</th><th>Combined</th></tr>${keys.map(k=>{const p=sum(months[k]||[],x=>x.net),f=sum(fpMonths[k]||[],x=>x.cashOut);return `<tr><td>${k}</td><td class="${p>=0?'good':'bad'}">${money(p)}</td><td>${money(f)}</td><td>${money(p+f)}</td></tr>`}).join('')||'<tr><td colspan="4">No data</td></tr>'}</table></section>`;
  const pts=(r.reconciliations||[]).map(x=>({v:Number(x.expected)||0}));html+=`<section class="report-card"><h3>Bankroll History</h3>${chartSvg(pts)}</section>`}
  else if(reportView==='casino'){const g=groupBy(sessions,x=>x.casino),rows=Object.entries(g).map(([k,a])=>({k,n:a.length,net:sum(a,x=>x.net),dep:sum(a,x=>x.totalDeployed),wins:a.filter(x=>x.net>0).length})).sort((a,b)=>b.net-a.net);const max=Math.max(1,...rows.map(x=>Math.abs(x.net)));html=`<section class="report-card"><h3>Casino Performance</h3>${rows.map(x=>`<div class="bar-row"><span>${esc(x.k)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(2,Math.abs(x.net)/max*100)}%"></div></div><b class="${x.net>=0?'good':'bad'}">${money(x.net)}</b></div>`).join('')||'<div class="sub">No sessions in period.</div>'}</section><section class="report-card"><table class="data-table"><tr><th>Casino</th><th>Sessions</th><th>Win%</th><th>Deployed</th><th>ROI</th></tr>${rows.map(x=>`<tr><td>${esc(x.k)}</td><td>${x.n}</td><td>${(x.wins/x.n*100).toFixed(0)}%</td><td>${money0(x.dep)}</td><td>${x.dep?(x.net/x.dep*100).toFixed(1):'0'}%</td></tr>`).join('')}</table></section>`;const pg=groupBy(sessions,x=>x.playerName);const pr=Object.entries(pg).map(([k,a])=>({k,n:a.length,net:sum(a,x=>x.net)})).sort((a,b)=>b.net-a.net);html+=`<section class="report-card"><h3>Player / Card Performance</h3><table class="data-table"><tr><th>Player / Card</th><th>Sessions</th><th>P/L</th></tr>${pr.map(x=>`<tr><td>${esc(x.k)}</td><td>${x.n}</td><td class="${x.net>=0?'good':'bad'}">${money(x.net)}</td></tr>`).join('')}</table></section>`}
- else if(reportView==='fp'){const earned=round2(fpCash*.15),payments=sum(r.payments||[],x=>x.amount),payable=Math.max(0,round2(earned-payments));html=`<div class="report-kpis"><div class="report-kpi"><span>FACE VALUE</span><b>${money(fpFace)}</b></div><div class="report-kpi"><span>ACTUAL CASH</span><b>${money(fpCash)}</b></div><div class="report-kpi"><span>CONVERSION</span><b>${(conv*100).toFixed(1)}%</b></div><div class="report-kpi"><span>15% EARNED</span><b>${money(earned)}</b></div></div>`;const fg=groupBy(fp,x=>x.casino),rows=Object.entries(fg).map(([k,a])=>({k,face:sum(a,x=>x.faceValue),cash:sum(a,x=>x.cashOut)})).sort((a,b)=>b.cash-a.cash);html+=`<section class="report-card"><h3>Free Play by Casino</h3><table class="data-table"><tr><th>Casino</th><th>Face</th><th>Cash</th><th>Conv.</th></tr>${rows.map(x=>`<tr><td>${esc(x.k)}</td><td>${money0(x.face)}</td><td>${money0(x.cash)}</td><td>${x.face?(x.cash/x.face*100).toFixed(1):0}%</td></tr>`).join('')}</table></section>`;
+ else if(reportView==='fp'){const earned=round2(fpCash*.15),payments=sum(r.payments||[],x=>x.amount),payable=Math.max(0,round2(earned-payments));html=`<div class="report-kpis"><div class="report-kpi"><span>FACE VALUE</span><b>${money(fpFace)}</b></div><div class="report-kpi"><span>ACTUAL CASH</span><b>${money(fpCash)}</b></div><div class="report-kpi"><span>COIN-IN P/L</span><b class="${coinInResult>=0?'good':'bad'}">${money(coinInResult)}</b></div><div class="report-kpi"><span>15% EARNED</span><b>${money(earned)}</b></div></div><section class="report-card"><h3>Linked Coin-In Activity</h3><table class="data-table"><tr><th>Metric</th><th>Total</th></tr><tr><td>Coin-In plays</td><td>${fpCoinIn.length}</td></tr><tr><td>Extra Coin-In</td><td>${coinInExtra.toLocaleString(undefined,{maximumFractionDigits:2})}</td></tr><tr><td>Tier Credits</td><td>${coinInTier.toLocaleString(undefined,{maximumFractionDigits:2})}</td></tr><tr><td>Win / Loss</td><td class="${coinInResult>=0?'good':'bad'}">${money(coinInResult)}</td></tr></table></section>`;const fg=groupBy(fp,x=>x.casino),rows=Object.entries(fg).map(([k,a])=>({k,face:sum(a,x=>x.faceValue),cash:sum(a,x=>x.cashOut)})).sort((a,b)=>b.cash-a.cash);html+=`<section class="report-card"><h3>Free Play by Casino</h3><table class="data-table"><tr><th>Casino</th><th>Face</th><th>Cash</th><th>Conv.</th></tr>${rows.map(x=>`<tr><td>${esc(x.k)}</td><td>${money0(x.face)}</td><td>${money0(x.cash)}</td><td>${x.face?(x.cash/x.face*100).toFixed(1):0}%</td></tr>`).join('')}</table></section>`;
  const snaps=r.scheduleSnapshots||[],snapMonths=groupBy(snaps,x=>x.monthKey),colMonths=groupBy(fp,x=>monthKey(x.ts));const mk=[...new Set([...Object.keys(snapMonths),...Object.keys(colMonths)])].filter(Boolean).sort().reverse();html+=`<section class="report-card"><h3>Schedule vs Collection</h3><table class="data-table"><tr><th>Month</th><th>Scheduled</th><th>Collected Face</th><th>Progress</th></tr>${mk.map(k=>{const s=sum(snaps[k]||[],x=>x.amount),c=sum(colMonths[k]||[],x=>x.faceValue);return `<tr><td>${k}</td><td>${money0(s)}</td><td>${money0(c)}</td><td>${s?Math.min(999,c/s*100).toFixed(1):'—'}%</td></tr>`}).join('')||'<tr><td colspan="4">Schedule snapshots begin with v8.0.</td></tr>'}</table><div class="sub">Progress compares scheduled known face value with recorded free-play face value. Unknown schedule amounts are excluded.</div></section><section class="report-card"><h3>15% Pay History</h3><div class="sub">Earned ${money(earned)} · Paid ${money(payments)} · Current calculated balance ${money(payable)}</div><table class="data-table"><tr><th>Date</th><th>Payment</th><th>Note</th></tr>${(r.payments||[]).slice().reverse().map(x=>`<tr><td>${esc((x.ts||'').slice(0,10))}</td><td>${money(x.amount)}</td><td>${esc(x.note||'')}</td></tr>`).join('')||'<tr><td colspan="3">No payments in period.</td></tr>'}</table></section>`}
  else{const corrections=r.corrections||[],recs=r.reconciliations||[],largeLosses=sessions.filter(x=>Number(x.net)<=-1000).sort((a,b)=>a.net-b.net),highReload=sessions.filter(x=>Number(x.reloads)>=2000).sort((a,b)=>b.reloads-a.reloads);html=`<div class="report-kpis"><div class="report-kpi"><span>CORRECTIONS</span><b>${corrections.length}</b></div><div class="report-kpi"><span>RECON CHECKS</span><b>${recs.length}</b></div><div class="report-kpi"><span>LOSSES ≤ -$1K</span><b>${largeLosses.length}</b></div><div class="report-kpi"><span>RELOADS ≥ $2K</span><b>${highReload.length}</b></div></div><section class="report-card"><h3>Exceptions / Audit</h3>${largeLosses.slice(0,10).map(x=>`<div class="audit-item"><b class="bad">${money(x.net)}</b> · ${esc(x.casino)}<div class="sub">${esc(x.playerName)} · deployed ${money(x.totalDeployed)}</div></div>`).join('')}${highReload.slice(0,10).map(x=>`<div class="audit-item"><b>${money(x.reloads)} reloads</b> · ${esc(x.casino)}<div class="sub">${esc(x.playerName)}</div></div>`).join('')||'<div class="sub">No flagged exceptions in this period.</div>'}</section><section class="report-card"><h3>Reconciliation History</h3><table class="data-table"><tr><th>Date</th><th>Expected</th><th>Physical</th><th>Variance</th></tr>${recs.slice().reverse().map(x=>`<tr><td>${esc((x.ts||'').slice(0,10))}</td><td>${money(x.expected)}</td><td>${money(x.physical)}</td><td class="${Math.abs(x.variance)<.01?'good':'bad'}">${money(x.variance)}</td></tr>`).join('')||'<tr><td colspan="4">History begins with v8.0 reconciliations.</td></tr>'}</table></section><section class="report-card"><h3>Bankroll Movements</h3><table class="data-table"><tr><th>Date</th><th>Type</th><th>Amount</th><th>Impact</th></tr>${(r.adjustments||[]).slice().reverse().map(x=>`<tr><td>${esc((x.ts||'').slice(0,10))}</td><td>${esc(x.type||'')}</td><td>${money(x.amount)}</td><td class="${Number(x.impact)>=0?'good':'bad'}">${Number(x.impact)>=0?'+':''}${money(x.impact)}</td></tr>`).join('')||'<tr><td colspan="4">No bankroll movements in this period.</td></tr>'}</table></section><section class="report-card"><h3>Correction Log</h3>${corrections.slice().reverse().slice(0,30).map(x=>`<div class="audit-item"><b>${esc(x.field)}</b>: ${esc(x.original)} → ${esc(x.corrected)}<div class="sub">${esc((x.ts||'').slice(0,10))} · ${esc(x.targetType)} · ${esc(x.reason||'No reason')}</div></div>`).join('')||'<div class="sub">No corrections in this period.</div>'}</section>`}
  $('reportsContent').innerHTML=html}
