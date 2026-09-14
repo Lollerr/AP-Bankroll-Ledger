@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.5.9';
+const APP_VERSION='8.6.0';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -289,9 +289,9 @@ async function settleFreePlay(){
   const v=viewData(),due=v.fpPayable;
   if(due<=0){setStatus('There is no free-play payment balance due.');return}
   if(due>v.expected){setStatus('The fee due exceeds the current expected bankroll. Reconcile or correct the ledger before paying it from the roll.');return}
-  if(!confirm('Pay yourself '+money(due)+' from the bankroll? This will clear the 15% payable and reduce expected bankroll by the same amount.')) return;
+  if(!confirm('Pay yourself '+money(due)+' from the bankroll? This will clear the 15% payable, reduce expected bankroll by the same amount, and mark the corresponding Rusty free-play collections paid when sync completes.')) return;
   const ev=event('fp_settlement',{amount:due,note:'Free-play commission paid from bankroll'});
-  await commitLocal(ev,null,'15% payment recorded · expected bankroll reduced; reconcile after removing the cash');
+  await commitLocal(ev,null,'15% payment recorded · expected bankroll reduced · Rusty settlement mirror queued');
 }
 
 function bankrollAdjustmentLabel(kind){
