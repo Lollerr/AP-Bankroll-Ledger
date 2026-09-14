@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.5.6';
+const APP_VERSION='8.5.7';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -85,6 +85,8 @@ function viewData(){
   let fpCash=Number(baseline.freePlay?.cashCollected)||0;
   let fpLegacy=Number(baseline.freePlay?.legacyPayable)||0;
   let fpEarned=Number(baseline.freePlay?.earned)||0;
+  let fpRecordedEarned=Number(baseline.freePlay?.recordedEarned);
+  if(!Number.isFinite(fpRecordedEarned)) fpRecordedEarned=round2(fpEarned-fpLegacy);
   let fpPaid=Number(baseline.freePlay?.paid)||0;
   for(const e of p){
     if(e.type==='cashout') expected+=Number(e.payload.net)||0;
@@ -119,7 +121,7 @@ function viewData(){
     }
   }
   expected=round2(expected); physical=round2(physical);
-  return {expected,physical,variance:round2(physical-expected),fpCash:round2(fpCash),fpRecordedEarned:round2(fpEarned),fpLegacy:round2(fpLegacy),fpEarned:round2(fpEarned+fpLegacy),fpPaid:round2(fpPaid),fpPayable:Math.max(0,round2(fpEarned+fpLegacy-fpPaid)),pending:p.length};
+  return {expected,physical,variance:round2(physical-expected),fpCash:round2(fpCash),fpRecordedEarned:round2(fpRecordedEarned),fpLegacy:round2(fpLegacy),fpEarned:round2(fpEarned),fpPaid:round2(fpPaid),fpPayable:Math.max(0,round2(fpEarned-fpPaid)),pending:p.length};
 }
 
 async function saveState(){await metaSet('localState',localState)}
