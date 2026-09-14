@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.5.2';
+const APP_VERSION='8.5.3';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -199,8 +199,10 @@ async function finishSession(){
   const a=localState.active;if(!a){setStatus('No active session.');return}
   const raw=$('cashOutAmount').value.trim(),n=Number(raw);
   if(raw===''||!Number.isFinite(n)||n<0){setStatus('Enter the final amount.');return}
-  const handpays=Number(a.handpays)||0;const ev=event('cashout',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:n,totalDeployed:a.totalDeployed,handpays,net:round2(n+handpays-a.totalDeployed)});
-  await commitLocal(ev,()=>{localState.active=null;localState.lastReload=null;$('cashOutAmount').value=''},'Session closed');
+  const tcRaw=$('tierCredits').value.trim().replace(/,/g,''),tierCredits=tcRaw===''?0:Number(tcRaw);
+  if(!Number.isFinite(tierCredits)||tierCredits<0){setStatus('Enter valid Tier Credits or leave it blank.');return}
+  const handpays=Number(a.handpays)||0;const ev=event('cashout',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:n,totalDeployed:a.totalDeployed,handpays,tierCredits:round2(tierCredits),net:round2(n+handpays-a.totalDeployed)});
+  await commitLocal(ev,()=>{localState.active=null;localState.lastReload=null;$('cashOutAmount').value='';$('tierCredits').value=''},'Session closed');
 }
 async function saveFreePlay(){
   const casino=$('fpCasinoSelect').value,player=$('fpPlayerName').value.trim();
@@ -295,7 +297,7 @@ function recentEntries(){
     map.set('session|'+id,{
       targetType:'session',targetId:id,ts:x.ts||x.date||'',casino:x.casino||'',playerName:x.playerName||'',
       initial:Number(x.initial)||0,reloads:Number(x.reloads)||0,totalDeployed:Number(x.totalDeployed)||0,
-      handpays:Number(x.handpays)||0,final:Number(x.final)||0,net:Number(x.net)||0,status:String(x.status||'')
+      handpays:Number(x.handpays)||0,tierCredits:Number(x.tierCredits)||0,final:Number(x.final)||0,net:Number(x.net)||0,status:String(x.status||'')
     });
   }
   for(const x of (reports.freePlay||[])){
@@ -324,13 +326,13 @@ function recentEntries(){
   for(const e of pending()){
     const p=e.payload||{};
     if(e.type==='session_start'){
-      map.set('session|'+p.sessionId,{targetType:'session',targetId:p.sessionId,ts:e.ts,casino:p.casino,playerName:p.playerName,initial:Number(p.amount)||0,reloads:0,totalDeployed:Number(p.amount)||0,handpays:0,final:0,net:-(Number(p.amount)||0),status:'OPEN'});
+      map.set('session|'+p.sessionId,{targetType:'session',targetId:p.sessionId,ts:e.ts,casino:p.casino,playerName:p.playerName,initial:Number(p.amount)||0,reloads:0,totalDeployed:Number(p.amount)||0,handpays:0,tierCredits:0,final:0,net:-(Number(p.amount)||0),status:'OPEN'});
     }else if(e.type==='reload'){
       const k='session|'+p.sessionId,x=map.get(k);if(x){x.reloads=round2((Number(x.reloads)||0)+(Number(p.amount)||0));x.totalDeployed=round2((Number(x.initial)||0)+x.reloads);x.net=x.status==='CLOSED'?round2((Number(x.final)||0)+(Number(x.handpays)||0)-x.totalDeployed):round2((Number(x.handpays)||0)-x.totalDeployed);x.ts=e.ts;}
     }else if(e.type==='handpay'){
       const k='session|'+p.sessionId,x=map.get(k);if(x){x.handpays=round2((Number(x.handpays)||0)+(Number(p.amount)||0));x.net=x.status==='CLOSED'?round2((Number(x.final)||0)+x.handpays-(Number(x.totalDeployed)||0)):round2(x.handpays-(Number(x.totalDeployed)||0));x.ts=e.ts;}
     }else if(e.type==='cashout'){
-      const k='session|'+p.sessionId;let x=map.get(k);if(!x)x={targetType:'session',targetId:p.sessionId,casino:p.casino,playerName:p.playerName,initial:Math.max(0,(Number(p.totalDeployed)||0)),reloads:0,totalDeployed:Number(p.totalDeployed)||0,handpays:Number(p.handpays)||0};x.final=Number(p.amount)||0;x.totalDeployed=Number(p.totalDeployed)||x.totalDeployed||0;x.handpays=Number(p.handpays)||Number(x.handpays)||0;x.net=Number(p.net)||round2(x.final+x.handpays-x.totalDeployed);x.status='CLOSED';x.ts=e.ts;map.set(k,x);
+      const k='session|'+p.sessionId;let x=map.get(k);if(!x)x={targetType:'session',targetId:p.sessionId,casino:p.casino,playerName:p.playerName,initial:Math.max(0,(Number(p.totalDeployed)||0)),reloads:0,totalDeployed:Number(p.totalDeployed)||0,handpays:Number(p.handpays)||0,tierCredits:Number(p.tierCredits)||0};x.final=Number(p.amount)||0;x.totalDeployed=Number(p.totalDeployed)||x.totalDeployed||0;x.handpays=Number(p.handpays)||Number(x.handpays)||0;x.tierCredits=Number(p.tierCredits)||0;x.net=Number(p.net)||round2(x.final+x.handpays-x.totalDeployed);x.status='CLOSED';x.ts=e.ts;map.set(k,x);
     }else if(e.type==='freeplay'){
       map.set('freeplay|'+e.id,{targetType:'freeplay',targetId:e.id,ts:e.ts,casino:p.casino,playerName:p.playerName,faceValue:Number(p.faceValue)||0,cashOut:Number(p.cashOut)||0});
     }else if(e.type==='correction'){
@@ -382,9 +384,9 @@ function loadCorrectionTarget(){
   const x=selectedCorrection();$('sessionCorrection').hidden=!x||x.targetType!=='session';$('fpCorrection').hidden=!x||x.targetType!=='freeplay';
   if(!x)return;
   if(x.targetType==='session'){
-    $('corrSessionCasino').value=x.casino;$('corrSessionPlayer').value=x.playerName;$('corrInitial').value=x.initial;$('corrReloads').value=x.reloads;$('corrFinal').value=x.final;
+    $('corrSessionCasino').value=x.casino;$('corrSessionPlayer').value=x.playerName;$('corrInitial').value=x.initial;$('corrReloads').value=x.reloads;$('corrFinal').value=x.final;$('corrTierCredits').value=Number(x.tierCredits)||0;
     $('corrSessionHandpays').textContent='Handpays recorded: '+money(Number(x.handpays)||0);
-    $('corrFinal').disabled=x.status==='OPEN';$('corrSessionSummary').textContent=x.status==='OPEN'?'Active session · final amount remains unavailable until session is closed.':'Current P/L '+money(x.net)+' · deployed '+money(x.totalDeployed);
+    $('corrFinal').disabled=x.status==='OPEN';$('corrTierCredits').disabled=x.status==='OPEN';$('corrSessionSummary').textContent=x.status==='OPEN'?'Active session · final amount and Tier Credits remain unavailable until session is closed.':'Current P/L '+money(x.net)+' · deployed '+money(x.totalDeployed)+' · Tier Credits '+(Number(x.tierCredits)||0).toLocaleString();
   }else{
     $('corrFpCasino').value=x.casino;$('corrFpPlayer').value=x.playerName;$('corrFpFace').value=x.faceValue;$('corrFpCash').value=x.cashOut;
   }
@@ -395,14 +397,15 @@ async function saveCorrection(){
   const reason=$('correctionReason').value.trim();let after;
   if(x.targetType==='session'){
     const casino=$('corrSessionCasino').value,player=$('corrSessionPlayer').value.trim();
-    const ir=$('corrInitial').value.trim(),rr=$('corrReloads').value.trim(),fr=$('corrFinal').value.trim();
-    const initial=Number(ir),reloads=Number(rr),final=x.status==='OPEN'?0:Number(fr);
+    const ir=$('corrInitial').value.trim(),rr=$('corrReloads').value.trim(),fr=$('corrFinal').value.trim(),tcr=$('corrTierCredits').value.trim().replace(/,/g,'');
+    const initial=Number(ir),reloads=Number(rr),final=x.status==='OPEN'?0:Number(fr),tierCredits=x.status==='OPEN'?0:(tcr===''?0:Number(tcr));
     if(!player){setStatus('Enter the player / card name.');return}
     if(ir===''||!Number.isFinite(initial)||initial<=0){setStatus('Enter a valid positive initial load.');return}
     if(rr===''||!Number.isFinite(reloads)||reloads<0){setStatus('Enter a valid reload total.');return}
     if(x.status!=='OPEN'&&(fr===''||!Number.isFinite(final)||final<0)){setStatus('Enter a valid final cash-out.');return}
+    if(x.status!=='OPEN'&&(!Number.isFinite(tierCredits)||tierCredits<0)){setStatus('Enter valid Tier Credits.');return}
     const totalDeployed=round2(initial+reloads),handpays=Number(x.handpays)||0,net=x.status==='OPEN'?round2(handpays-totalDeployed):round2(final+handpays-totalDeployed);
-    after={casino,playerName:player,initial,reloads,totalDeployed,handpays,final,net,status:x.status};
+    after={casino,playerName:player,initial,reloads,totalDeployed,handpays,tierCredits:round2(tierCredits),final,net,status:x.status};
   }else{
     const casino=$('corrFpCasino').value,player=$('corrFpPlayer').value.trim();
     const ar=$('corrFpFace').value.trim(),cr=$('corrFpCash').value.trim(),faceValue=Number(ar),cashOut=Number(cr);
@@ -622,8 +625,8 @@ function sum(a,f){return round2(a.reduce((s,x)=>s+(Number(f(x))||0),0))}
 function groupBy(a,key){const m={};for(const x of a){const k=key(x)||'Unknown';(m[k]||(m[k]=[])).push(x)}return m}
 function monthKey(ts){const d=dateOf(ts);return d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`:''}
 function chartSvg(points){if(points.length<2)return '<div class="sub">Not enough history yet.</div>';const vals=points.map(x=>x.v),mn=Math.min(...vals),mx=Math.max(...vals),rng=Math.max(1,mx-mn);const coords=points.map((x,i)=>`${(i/(points.length-1))*100},${95-((x.v-mn)/rng)*80}`).join(' ');return `<svg class="trend" viewBox="0 0 100 100" preserveAspectRatio="none"><line class="axis" x1="0" y1="95" x2="100" y2="95"/><polyline points="${coords}"/></svg><div class="sub">${money(mn)} low · ${money(mx)} high</div>`}
-function renderReports(){if(!$('reportsContent'))return;const r=reportFiltered(),sessions=(r.sessions||[]).filter(x=>x.status==='CLOSED'),fp=r.freePlay||[];const net=sum(sessions,x=>x.net),deployed=sum(sessions,x=>x.totalDeployed),handpays=sum(sessions,x=>x.handpays),wins=sessions.filter(x=>Number(x.net)>0),losses=sessions.filter(x=>Number(x.net)<0),fpFace=sum(fp,x=>x.faceValue),fpCash=sum(fp,x=>x.cashOut),conv=fpFace?fpCash/fpFace:0;
- let html='';if(reportView==='overview'){const best=sessions.length?Math.max(...sessions.map(x=>Number(x.net)||0)):0,worst=sessions.length?Math.min(...sessions.map(x=>Number(x.net)||0)):0;html=`<div class="report-kpis"><div class="report-kpi"><span>NET AP P/L</span><b class="${net>=0?'good':'bad'}">${money(net)}</b></div><div class="report-kpi"><span>SESSIONS</span><b>${sessions.length}</b></div><div class="report-kpi"><span>WIN RATE</span><b>${sessions.length?(wins.length/sessions.length*100).toFixed(1):'0.0'}%</b></div><div class="report-kpi"><span>FP CASH</span><b>${money(fpCash)}</b></div></div><section class="report-card"><h3>Session Analytics</h3><table class="data-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total deployed</td><td>${money(deployed)}</td></tr><tr><td>Handpays received</td><td>${money(handpays)}</td></tr><tr><td>P/L per $1,000 deployed</td><td>${deployed?money(net/deployed*1000):'$0.00'}</td></tr><tr><td>Average session</td><td>${sessions.length?money(net/sessions.length):'$0.00'}</td></tr><tr><td>Best session</td><td class="good">${money(best)}</td></tr><tr><td>Worst session</td><td class="bad">${money(worst)}</td></tr><tr><td>Winning / losing</td><td>${wins.length} / ${losses.length}</td></tr></table></section>`;
+function renderReports(){if(!$('reportsContent'))return;const r=reportFiltered(),sessions=(r.sessions||[]).filter(x=>x.status==='CLOSED'),fp=r.freePlay||[];const net=sum(sessions,x=>x.net),deployed=sum(sessions,x=>x.totalDeployed),handpays=sum(sessions,x=>x.handpays),tierCredits=sum(sessions,x=>x.tierCredits),wins=sessions.filter(x=>Number(x.net)>0),losses=sessions.filter(x=>Number(x.net)<0),fpFace=sum(fp,x=>x.faceValue),fpCash=sum(fp,x=>x.cashOut),conv=fpFace?fpCash/fpFace:0;
+ let html='';if(reportView==='overview'){const best=sessions.length?Math.max(...sessions.map(x=>Number(x.net)||0)):0,worst=sessions.length?Math.min(...sessions.map(x=>Number(x.net)||0)):0;html=`<div class="report-kpis"><div class="report-kpi"><span>NET AP P/L</span><b class="${net>=0?'good':'bad'}">${money(net)}</b></div><div class="report-kpi"><span>SESSIONS</span><b>${sessions.length}</b></div><div class="report-kpi"><span>WIN RATE</span><b>${sessions.length?(wins.length/sessions.length*100).toFixed(1):'0.0'}%</b></div><div class="report-kpi"><span>FP CASH</span><b>${money(fpCash)}</b></div></div><section class="report-card"><h3>Session Analytics</h3><table class="data-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total deployed</td><td>${money(deployed)}</td></tr><tr><td>Handpays received</td><td>${money(handpays)}</td></tr><tr><td>Tier Credits recorded</td><td>${tierCredits.toLocaleString(undefined,{maximumFractionDigits:2})}</td></tr><tr><td>P/L per $1,000 deployed</td><td>${deployed?money(net/deployed*1000):'$0.00'}</td></tr><tr><td>Average session</td><td>${sessions.length?money(net/sessions.length):'$0.00'}</td></tr><tr><td>Best session</td><td class="good">${money(best)}</td></tr><tr><td>Worst session</td><td class="bad">${money(worst)}</td></tr><tr><td>Winning / losing</td><td>${wins.length} / ${losses.length}</td></tr></table></section>`;
  const months=groupBy(sessions,x=>monthKey(x.ts||x.date));const fpMonths=groupBy(fp,x=>monthKey(x.ts));const keys=[...new Set([...Object.keys(months),...Object.keys(fpMonths)])].filter(Boolean).sort().reverse();html+=`<section class="report-card"><h3>Monthly Summary</h3><table class="data-table"><tr><th>Month</th><th>AP P/L</th><th>FP Cash</th><th>Combined</th></tr>${keys.map(k=>{const p=sum(months[k]||[],x=>x.net),f=sum(fpMonths[k]||[],x=>x.cashOut);return `<tr><td>${k}</td><td class="${p>=0?'good':'bad'}">${money(p)}</td><td>${money(f)}</td><td>${money(p+f)}</td></tr>`}).join('')||'<tr><td colspan="4">No data</td></tr>'}</table></section>`;
  const pts=(r.reconciliations||[]).map(x=>({v:Number(x.expected)||0}));html+=`<section class="report-card"><h3>Bankroll History</h3>${chartSvg(pts)}</section>`}
  else if(reportView==='casino'){const g=groupBy(sessions,x=>x.casino),rows=Object.entries(g).map(([k,a])=>({k,n:a.length,net:sum(a,x=>x.net),dep:sum(a,x=>x.totalDeployed),wins:a.filter(x=>x.net>0).length})).sort((a,b)=>b.net-a.net);const max=Math.max(1,...rows.map(x=>Math.abs(x.net)));html=`<section class="report-card"><h3>Casino Performance</h3>${rows.map(x=>`<div class="bar-row"><span>${esc(x.k)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(2,Math.abs(x.net)/max*100)}%"></div></div><b class="${x.net>=0?'good':'bad'}">${money(x.net)}</b></div>`).join('')||'<div class="sub">No sessions in period.</div>'}</section><section class="report-card"><table class="data-table"><tr><th>Casino</th><th>Sessions</th><th>Win%</th><th>Deployed</th><th>ROI</th></tr>${rows.map(x=>`<tr><td>${esc(x.k)}</td><td>${x.n}</td><td>${(x.wins/x.n*100).toFixed(0)}%</td><td>${money0(x.dep)}</td><td>${x.dep?(x.net/x.dep*100).toFixed(1):'0'}%</td></tr>`).join('')}</table></section>`;const pg=groupBy(sessions,x=>x.playerName);const pr=Object.entries(pg).map(([k,a])=>({k,n:a.length,net:sum(a,x=>x.net)})).sort((a,b)=>b.net-a.net);html+=`<section class="report-card"><h3>Player / Card Performance</h3><table class="data-table"><tr><th>Player / Card</th><th>Sessions</th><th>P/L</th></tr>${pr.map(x=>`<tr><td>${esc(x.k)}</td><td>${x.n}</td><td class="${x.net>=0?'good':'bad'}">${money(x.net)}</td></tr>`).join('')}</table></section>`}
