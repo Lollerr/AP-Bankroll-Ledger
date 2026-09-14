@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.3.1';
+const APP_VERSION='8.5.1';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -72,7 +72,7 @@ async function refreshEvents(){eventsCache=await reqP(store('events').getAll());
 async function markSynced(ids){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const id of ids){const ev=await reqP(s.get(id));if(ev){ev.synced=true;ev.syncedAt=Date.now();s.put(ev)}}await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 async function deleteSynced(){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const ev of eventsCache) if(ev.synced) s.delete(ev.id);await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 
-function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},scheduleData:{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]},reports:{sessions:[],freePlay:[],payments:[],reconciliations:[],corrections:[],scheduleSnapshots:[]},lastReload:null,recent:[]}}
+function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,paid:0,payable:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},scheduleData:{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]},reports:{sessions:[],freePlay:[],payments:[],reconciliations:[],corrections:[],adjustments:[],scheduleSnapshots:[]},lastReload:null,recent:[]}}
 function defaultState(){return {active:null,lastReload:null}}
 function uuid(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}
 function event(type,payload){return {id:uuid(),type,ts:new Date().toISOString(),createdAt:Date.now(),deviceId,payload,synced:false}}
@@ -90,7 +90,15 @@ function viewData(){
     if(e.type==='freeplay'){
       const c=Number(e.payload.cashOut)||0; expected+=c; fpCash+=c; fpEarned+=round2(c*.15);
     }
-    if(e.type==='fp_settlement') fpPaid+=Number(e.payload.amount)||0;
+    if(e.type==='fp_settlement'){
+      const amt=Number(e.payload.amount)||0;
+      fpPaid+=amt;
+      expected-=amt;
+    }
+    if(e.type==='bankroll_adjustment'){
+      const amt=Number(e.payload.amount)||0;
+      expected+=e.payload.kind==='capital_added'?amt:-amt;
+    }
     if(e.type==='reconcile') physical=Number(e.payload.counted)||0;
     if(e.type==='correction'){
       const b=e.payload.before||{},a=e.payload.after||{};
@@ -172,18 +180,26 @@ async function startSession(amount){
   if(localState.active){setStatus('A session is already active.');return}
   const sid='S-'+uuid();
   const ev=event('session_start',{sessionId:sid,casino,playerName:player,amount});
-  await commitLocal(ev,()=>{localState.active={sessionId:sid,casino,playerName:player,initial:Number(amount),reloads:0,totalDeployed:Number(amount)};localState.lastReload=null;$('sessionPlayerName').value=''},'Session started');
+  await commitLocal(ev,()=>{localState.active={sessionId:sid,casino,playerName:player,initial:Number(amount),reloads:0,totalDeployed:Number(amount),handpays:0};localState.lastReload=null;$('sessionPlayerName').value=''},'Session started');
 }
 async function addReload(amount){
   const a=localState.active;if(!a){setStatus('No active session.');return}
   const ev=event('reload',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount});
   await commitLocal(ev,()=>{a.reloads+=Number(amount);a.totalDeployed+=Number(amount);localState.lastReload={amount:Number(amount),ts:ev.ts}},'Reload recorded');
 }
+async function addHandpay(){
+  const a=localState.active;if(!a){setStatus('No active session.');return}
+  const raw=$('handpayAmount').value.trim().replace(/,/g,''),amount=Number(raw);
+  if(raw===''||!Number.isFinite(amount)||amount<=0){setStatus('Enter the cash handpay amount.');return}
+  if(!confirm('Record '+money(amount)+' as cash received from a handpay and continue this same session?')) return;
+  const ev=event('handpay',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:round2(amount)});
+  await commitLocal(ev,()=>{a.handpays=round2((Number(a.handpays)||0)+amount);$('handpayAmount').value=''},'Handpay recorded · session remains open');
+}
 async function finishSession(){
   const a=localState.active;if(!a){setStatus('No active session.');return}
   const raw=$('cashOutAmount').value.trim(),n=Number(raw);
   if(raw===''||!Number.isFinite(n)||n<0){setStatus('Enter the final amount.');return}
-  const ev=event('cashout',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:n,totalDeployed:a.totalDeployed,net:round2(n-a.totalDeployed)});
+  const handpays=Number(a.handpays)||0;const ev=event('cashout',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:n,totalDeployed:a.totalDeployed,handpays,net:round2(n+handpays-a.totalDeployed)});
   await commitLocal(ev,()=>{localState.active=null;localState.lastReload=null;$('cashOutAmount').value=''},'Session closed');
 }
 async function saveFreePlay(){
@@ -196,11 +212,66 @@ async function saveFreePlay(){
   await commitLocal(ev,()=>{$('fpFaceValue').value='';$('fpCashOut').value=''},'Free play recorded');
 }
 async function settleFreePlay(){
-  const due=viewData().fpPayable;
+  const v=viewData(),due=v.fpPayable;
   if(due<=0){setStatus('There is no free-play payment balance due.');return}
-  if(!confirm('Record '+money(due)+' as paid and reset the running 15% balance to $0?')) return;
-  const ev=event('fp_settlement',{amount:due,note:'Free-play commission paid'});
-  await commitLocal(ev,null,'Payment settlement recorded');
+  if(due>v.expected){setStatus('The fee due exceeds the current expected bankroll. Reconcile or correct the ledger before paying it from the roll.');return}
+  if(!confirm('Pay yourself '+money(due)+' from the bankroll? This will clear the 15% payable and reduce expected bankroll by the same amount.')) return;
+  const ev=event('fp_settlement',{amount:due,note:'Free-play commission paid from bankroll'});
+  await commitLocal(ev,null,'15% payment recorded · expected bankroll reduced; reconcile after removing the cash');
+}
+
+function bankrollAdjustmentLabel(kind){
+  return kind==='capital_added'?'Capital added':kind==='other_withdrawal'?'Other withdrawal':'Backer distribution';
+}
+function bankrollAdjustmentImpact(kind,amount){
+  const n=Number(amount)||0;
+  return kind==='capital_added'?n:-n;
+}
+function renderBankrollMovement(){
+  const v=viewData();
+  const type=$('bankrollAdjustmentType');
+  const amountEl=$('bankrollAdjustmentAmount');
+  const preview=$('bankrollAdjustmentPreview');
+  if(type&&amountEl&&preview){
+    const raw=amountEl.value.trim().replace(/,/g,'');
+    const amt=Number(raw),kind=type.value;
+    if(raw!==''&&Number.isFinite(amt)&&amt>0){
+      const after=round2(v.expected+bankrollAdjustmentImpact(kind,amt));
+      preview.textContent=`Current expected ${money(v.expected)} · After movement ${money(after)}`;
+    }else preview.textContent=`Current expected ${money(v.expected)}`;
+  }
+  const targetEl=$('backerTargetBalance'),detail=$('backerTargetDetail');
+  if(targetEl&&detail){
+    const raw=targetEl.value.trim().replace(/,/g,''),target=Number(raw);
+    if(raw!==''&&Number.isFinite(target)&&target>=0){
+      const give=round2(v.expected-target);
+      detail.textContent=give>0?`Current expected ${money(v.expected)} · Return ${money(give)} · Keep ${money(target)}`:
+        give===0?`Current expected already equals ${money(target)}.`:
+        `Target is ${money(Math.abs(give))} above current expected bankroll.`;
+    }else detail.textContent=`Current expected ${money(v.expected)}`;
+  }
+}
+async function saveBankrollAdjustment(){
+  const kind=$('bankrollAdjustmentType').value;
+  const raw=$('bankrollAdjustmentAmount').value.trim().replace(/,/g,'');
+  const amount=Number(raw),note=$('bankrollAdjustmentNote').value.trim();
+  if(raw===''||!Number.isFinite(amount)||amount<=0){setStatus('Enter a valid bankroll movement amount.');return}
+  const v=viewData(),impact=bankrollAdjustmentImpact(kind,amount),after=round2(v.expected+impact);
+  if(after<0){setStatus('This withdrawal would reduce expected bankroll below $0.');return}
+  const label=bankrollAdjustmentLabel(kind);
+  if(!confirm(`${label}: ${money(amount)}? Expected bankroll will change from ${money(v.expected)} to ${money(after)}.`)) return;
+  const ev=event('bankroll_adjustment',{kind,amount:round2(amount),note});
+  await commitLocal(ev,()=>{$('bankrollAdjustmentAmount').value='';$('bankrollAdjustmentNote').value=''},`${label} recorded · reconcile after the physical cash movement`);
+}
+async function returnExcessToBacker(){
+  const raw=$('backerTargetBalance').value.trim().replace(/,/g,''),target=Number(raw),v=viewData();
+  if(raw===''||!Number.isFinite(target)||target<0){setStatus('Enter a valid target bankroll.');return}
+  const amount=round2(v.expected-target);
+  if(amount<0){setStatus('Target bankroll is higher than current expected bankroll. Use Capital added instead.');return}
+  if(amount===0){setStatus('Expected bankroll already equals the target.');return}
+  if(!confirm(`Return ${money(amount)} to your backer and keep ${money(target)} in the operating bankroll?`)) return;
+  const ev=event('bankroll_adjustment',{kind:'backer_distribution',amount,target:round2(target),note:`Distribution to target bankroll ${money(target)}`});
+  await commitLocal(ev,null,`Backer distribution recorded · expected bankroll is now ${money(target)}; reconcile after handing over the cash`);
 }
 async function reconcileNow(){
   const raw=$('physicalCount').value.trim();if(raw===''){setStatus('Enter the physical bankroll count.');return}
@@ -224,7 +295,7 @@ function recentEntries(){
     map.set('session|'+id,{
       targetType:'session',targetId:id,ts:x.ts||x.date||'',casino:x.casino||'',playerName:x.playerName||'',
       initial:Number(x.initial)||0,reloads:Number(x.reloads)||0,totalDeployed:Number(x.totalDeployed)||0,
-      final:Number(x.final)||0,net:Number(x.net)||0,status:String(x.status||'')
+      handpays:Number(x.handpays)||0,final:Number(x.final)||0,net:Number(x.net)||0,status:String(x.status||'')
     });
   }
   for(const x of (reports.freePlay||[])){
@@ -236,28 +307,37 @@ function recentEntries(){
     });
   }
 
-  // The dedicated recent payload is preferred when present because it is the
-  // server's intentionally small, correction-oriented view. It overwrites
-  // matching report-history records by target type + target ID.
-  for(const x of (baseline.recent||[])) map.set(x.targetType+'|'+x.targetId,{...x});
+  // Merge the server's small recent payload without degrading a closed
+  // session's precise cash-out timestamp from report history. Older builds
+  // overwrote that timestamp with the date-only Sessions value, which could
+  // incorrectly push valid sessions out of the correction picker.
+  for(const x of (baseline.recent||[])){
+    const k=x.targetType+'|'+x.targetId, prior=map.get(k);
+    const merged={...(prior||{}),...x};
+    if(x.targetType==='session' && String(x.status||'')!=='OPEN' && prior?.ts) merged.ts=prior.ts;
+    else merged.ts=x.ts||prior?.ts||'';
+    map.set(k,merged);
+  }
 
   // Pending local events are applied last so the picker always reflects the
   // newest unsynced state on this device.
   for(const e of pending()){
     const p=e.payload||{};
     if(e.type==='session_start'){
-      map.set('session|'+p.sessionId,{targetType:'session',targetId:p.sessionId,ts:e.ts,casino:p.casino,playerName:p.playerName,initial:Number(p.amount)||0,reloads:0,totalDeployed:Number(p.amount)||0,final:0,net:-(Number(p.amount)||0),status:'OPEN'});
+      map.set('session|'+p.sessionId,{targetType:'session',targetId:p.sessionId,ts:e.ts,casino:p.casino,playerName:p.playerName,initial:Number(p.amount)||0,reloads:0,totalDeployed:Number(p.amount)||0,handpays:0,final:0,net:-(Number(p.amount)||0),status:'OPEN'});
     }else if(e.type==='reload'){
-      const k='session|'+p.sessionId,x=map.get(k);if(x){x.reloads=round2((Number(x.reloads)||0)+(Number(p.amount)||0));x.totalDeployed=round2((Number(x.initial)||0)+x.reloads);x.net=x.status==='CLOSED'?round2((Number(x.final)||0)-x.totalDeployed):-x.totalDeployed;x.ts=e.ts;}
+      const k='session|'+p.sessionId,x=map.get(k);if(x){x.reloads=round2((Number(x.reloads)||0)+(Number(p.amount)||0));x.totalDeployed=round2((Number(x.initial)||0)+x.reloads);x.net=x.status==='CLOSED'?round2((Number(x.final)||0)+(Number(x.handpays)||0)-x.totalDeployed):round2((Number(x.handpays)||0)-x.totalDeployed);x.ts=e.ts;}
+    }else if(e.type==='handpay'){
+      const k='session|'+p.sessionId,x=map.get(k);if(x){x.handpays=round2((Number(x.handpays)||0)+(Number(p.amount)||0));x.net=x.status==='CLOSED'?round2((Number(x.final)||0)+x.handpays-(Number(x.totalDeployed)||0)):round2(x.handpays-(Number(x.totalDeployed)||0));x.ts=e.ts;}
     }else if(e.type==='cashout'){
-      const k='session|'+p.sessionId;let x=map.get(k);if(!x)x={targetType:'session',targetId:p.sessionId,casino:p.casino,playerName:p.playerName,initial:Math.max(0,(Number(p.totalDeployed)||0)),reloads:0,totalDeployed:Number(p.totalDeployed)||0};x.final=Number(p.amount)||0;x.totalDeployed=Number(p.totalDeployed)||x.totalDeployed||0;x.net=Number(p.net)||0;x.status='CLOSED';x.ts=e.ts;map.set(k,x);
+      const k='session|'+p.sessionId;let x=map.get(k);if(!x)x={targetType:'session',targetId:p.sessionId,casino:p.casino,playerName:p.playerName,initial:Math.max(0,(Number(p.totalDeployed)||0)),reloads:0,totalDeployed:Number(p.totalDeployed)||0,handpays:Number(p.handpays)||0};x.final=Number(p.amount)||0;x.totalDeployed=Number(p.totalDeployed)||x.totalDeployed||0;x.handpays=Number(p.handpays)||Number(x.handpays)||0;x.net=Number(p.net)||round2(x.final+x.handpays-x.totalDeployed);x.status='CLOSED';x.ts=e.ts;map.set(k,x);
     }else if(e.type==='freeplay'){
       map.set('freeplay|'+e.id,{targetType:'freeplay',targetId:e.id,ts:e.ts,casino:p.casino,playerName:p.playerName,faceValue:Number(p.faceValue)||0,cashOut:Number(p.cashOut)||0});
     }else if(e.type==='correction'){
       const k=p.targetType+'|'+p.targetId,x=map.get(k);if(x){Object.assign(x,p.after||{});x.ts=e.ts;}
     }
   }
-  return [...map.values()].sort((a,b)=>String(b.ts||'').localeCompare(String(a.ts||''))).slice(0,40);
+  return [...map.values()].sort((a,b)=>String(b.ts||'').localeCompare(String(a.ts||'')));
 }
 function correctionLabel(x){
   const d=x.ts?new Date(x.ts).toLocaleDateString([], {month:'numeric',day:'numeric'}):'';
@@ -303,6 +383,7 @@ function loadCorrectionTarget(){
   if(!x)return;
   if(x.targetType==='session'){
     $('corrSessionCasino').value=x.casino;$('corrSessionPlayer').value=x.playerName;$('corrInitial').value=x.initial;$('corrReloads').value=x.reloads;$('corrFinal').value=x.final;
+    $('corrSessionHandpays').textContent='Handpays recorded: '+money(Number(x.handpays)||0);
     $('corrFinal').disabled=x.status==='OPEN';$('corrSessionSummary').textContent=x.status==='OPEN'?'Active session · final amount remains unavailable until session is closed.':'Current P/L '+money(x.net)+' · deployed '+money(x.totalDeployed);
   }else{
     $('corrFpCasino').value=x.casino;$('corrFpPlayer').value=x.playerName;$('corrFpFace').value=x.faceValue;$('corrFpCash').value=x.cashOut;
@@ -320,8 +401,8 @@ async function saveCorrection(){
     if(ir===''||!Number.isFinite(initial)||initial<=0){setStatus('Enter a valid positive initial load.');return}
     if(rr===''||!Number.isFinite(reloads)||reloads<0){setStatus('Enter a valid reload total.');return}
     if(x.status!=='OPEN'&&(fr===''||!Number.isFinite(final)||final<0)){setStatus('Enter a valid final cash-out.');return}
-    const totalDeployed=round2(initial+reloads),net=x.status==='OPEN'?-totalDeployed:round2(final-totalDeployed);
-    after={casino,playerName:player,initial,reloads,totalDeployed,final,net,status:x.status};
+    const totalDeployed=round2(initial+reloads),handpays=Number(x.handpays)||0,net=x.status==='OPEN'?round2(handpays-totalDeployed):round2(final+handpays-totalDeployed);
+    after={casino,playerName:player,initial,reloads,totalDeployed,handpays,final,net,status:x.status};
   }else{
     const casino=$('corrFpCasino').value,player=$('corrFpPlayer').value.trim();
     const ar=$('corrFpFace').value.trim(),cr=$('corrFpCash').value.trim(),faceValue=Number(ar),cashOut=Number(cr);
@@ -348,16 +429,16 @@ function populateCasinos(){
 function render(){
   const v=viewData(),a=localState.active,sched=baseline.schedule||{};
   if($('newSession'))$('newSession').hidden=!!a;if($('activeSession'))$('activeSession').hidden=!a;
-  if(a){$('activeCasino').textContent=a.casino;$('activePlayer').textContent='Player / Card: '+a.playerName;const lr=localState.lastReload;$('lastReload').textContent=lr?money(lr.amount).replace('.00','')+' at '+new Date(lr.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None yet'}
+  if(a){$('activeCasino').textContent=a.casino;$('activePlayer').textContent='Player / Card: '+a.playerName;const handpays=Number(a.handpays)||0,totalDeployed=Number(a.totalDeployed)||0;$('sessionInitial').textContent=money0(Number(a.initial)||0);$('sessionReloads').textContent=money0(Number(a.reloads)||0);$('sessionTotalDeployed').textContent=money0(totalDeployed);$('sessionHandpayTotal').textContent=money0(handpays);const realized=round2(handpays-totalDeployed);$('sessionRealizedPosition').textContent=(realized<0?'−':'')+money(Math.abs(realized));$('sessionRealizedPosition').className='big '+(realized>=0?'good':'bad');const lr=localState.lastReload;$('lastReload').textContent=lr?money(lr.amount).replace('.00','')+' at '+new Date(lr.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None yet';$('sessionHandpays').textContent=money(handpays)}
   const cloudLoaded=bootstrapReady||!!baseline.syncAt;
   $('homeExpected').textContent=cloudLoaded?money(v.expected):'—';$('homePhysical').textContent=cloudLoaded?money(v.physical):'—';$('homeVariance').textContent=cloudLoaded?((v.variance<0?'−':'')+money(Math.abs(v.variance))):'—';$('homeVariance').className=cloudLoaded?(v.variance===0?'good':'bad'):'';
   $('homeFpPayable').textContent=cloudLoaded?money(v.fpPayable):'—';$('homeFpCash').textContent=cloudLoaded?money(v.fpCash):'—';$('homeScheduled').textContent=cloudLoaded&&sched.ok?money0(sched.totalOffers):'—';$('homeScheduledPay').textContent=cloudLoaded&&sched.ok?money(sched.offerPay):'—';
-  $('homeActive').hidden=!a;if(a){$('homeActiveCasino').textContent=a.casino;$('homeActivePlayer').textContent=a.playerName;$('homeDeployed').textContent=money0(a.totalDeployed);$('homeReloads').textContent=money0(a.reloads);$('homeLastReload').textContent=localState.lastReload?new Date(localState.lastReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
+  $('homeActive').hidden=!a;if(a){$('homeActiveCasino').textContent=a.casino;$('homeActivePlayer').textContent=a.playerName;$('homeDeployed').textContent=money0(a.totalDeployed);$('homeReloads').textContent=money0(a.reloads);$('homeHandpays').textContent=money0(Number(a.handpays)||0);$('homeLastReload').textContent=localState.lastReload?new Date(localState.lastReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
   $('fpPayable').textContent=money(v.fpPayable);$('fpPayDetail').textContent=money(v.fpEarned)+' earned · '+money(v.fpPaid)+' paid';$('settleBtn').disabled=actionLocked||!cloudLoaded||v.fpPayable<=0;
   $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'good':'bad');$('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
   const online=navigator.onLine,p=v.pending,badge=$('syncBadge');if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP'}else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}else if(cloudError&&!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC ERROR'}else if(!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC NEEDED'}else{badge.className='badge '+(!online||p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
   const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';const backup=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required.':!cloudLoaded?(cloudError?`Ledger data unavailable — ${cloudError}.`:'Ledger data unavailable — sync required.'):p?`${p} local entr${p===1?'y':'ies'} awaiting backup · Last sync ${last}`:`All local entries backed up · Last sync ${last}`;$('backupDetail').textContent=backup;$('homeBackup').textContent=backup;$('keyDetail').textContent=syncKey?(cloudLoaded?'Private sync key verified on this device.':'A private sync key is stored, but it has not successfully loaded the ledger yet.'):'No private sync key saved on this device.';
-  renderCorrectionPicker();if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();
+  renderCorrectionPicker();renderBankrollMovement();if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();
 }
 function esc(v){return String(v??'').replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
 function money0(n){return '$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0})}
@@ -534,21 +615,21 @@ function openCalculator(name){showPage('calculators');$('calculatorHub').hidden=
 function goAdd(view){showPage('add');setEntryView(view)}
 function setEntryView(view){entryView=['session','freeplay','reconcile'].includes(view)?view:'session';$('entrySession').hidden=entryView!=='session';$('entryFreeplay').hidden=entryView!=='freeplay';$('entryReconcile').hidden=entryView!=='reconcile';$('entrySessionTab').classList.toggle('active',entryView==='session');$('entryFpTab').classList.toggle('active',entryView==='freeplay');$('entryReconTab').classList.toggle('active',entryView==='reconcile')}
 function setReportView(view){reportView=['overview','casino','fp','audit'].includes(view)?view:'overview';for(const x of ['Overview','Casino','Fp','Audit'])$('report'+x+'Tab').classList.toggle('active',reportView===x.toLowerCase());renderReports()}
-function reportData(){return baseline.reports||{sessions:[],freePlay:[],payments:[],reconciliations:[],corrections:[],scheduleSnapshots:[]}}
+function reportData(){return baseline.reports||{sessions:[],freePlay:[],payments:[],reconciliations:[],corrections:[],adjustments:[],scheduleSnapshots:[]}}
 function dateOf(x){const d=new Date(x);return isNaN(d)?null:d}
-function reportFiltered(){const r=reportData(),mode=$('reportPeriod')?.value||'month',now=new Date();let start=null;if(mode==='month')start=new Date(now.getFullYear(),now.getMonth(),1);else if(mode==='30')start=new Date(now.getTime()-30*864e5);else if(mode==='ytd')start=new Date(now.getFullYear(),0,1);const keep=x=>!start||((dateOf(x.ts||x.date||x.timestamp)||new Date(0))>=start);return {...r,sessions:(r.sessions||[]).filter(keep),freePlay:(r.freePlay||[]).filter(keep),payments:(r.payments||[]).filter(keep),reconciliations:(r.reconciliations||[]).filter(keep),corrections:(r.corrections||[]).filter(keep)}}
+function reportFiltered(){const r=reportData(),mode=$('reportPeriod')?.value||'month',now=new Date();let start=null;if(mode==='month')start=new Date(now.getFullYear(),now.getMonth(),1);else if(mode==='30')start=new Date(now.getTime()-30*864e5);else if(mode==='ytd')start=new Date(now.getFullYear(),0,1);const keep=x=>!start||((dateOf(x.ts||x.date||x.timestamp)||new Date(0))>=start);return {...r,sessions:(r.sessions||[]).filter(keep),freePlay:(r.freePlay||[]).filter(keep),payments:(r.payments||[]).filter(keep),reconciliations:(r.reconciliations||[]).filter(keep),corrections:(r.corrections||[]).filter(keep),adjustments:(r.adjustments||[]).filter(keep)}}
 function sum(a,f){return round2(a.reduce((s,x)=>s+(Number(f(x))||0),0))}
 function groupBy(a,key){const m={};for(const x of a){const k=key(x)||'Unknown';(m[k]||(m[k]=[])).push(x)}return m}
 function monthKey(ts){const d=dateOf(ts);return d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`:''}
 function chartSvg(points){if(points.length<2)return '<div class="sub">Not enough history yet.</div>';const vals=points.map(x=>x.v),mn=Math.min(...vals),mx=Math.max(...vals),rng=Math.max(1,mx-mn);const coords=points.map((x,i)=>`${(i/(points.length-1))*100},${95-((x.v-mn)/rng)*80}`).join(' ');return `<svg class="trend" viewBox="0 0 100 100" preserveAspectRatio="none"><line class="axis" x1="0" y1="95" x2="100" y2="95"/><polyline points="${coords}"/></svg><div class="sub">${money(mn)} low · ${money(mx)} high</div>`}
-function renderReports(){if(!$('reportsContent'))return;const r=reportFiltered(),sessions=(r.sessions||[]).filter(x=>x.status==='CLOSED'),fp=r.freePlay||[];const net=sum(sessions,x=>x.net),deployed=sum(sessions,x=>x.totalDeployed),wins=sessions.filter(x=>Number(x.net)>0),losses=sessions.filter(x=>Number(x.net)<0),fpFace=sum(fp,x=>x.faceValue),fpCash=sum(fp,x=>x.cashOut),conv=fpFace?fpCash/fpFace:0;
- let html='';if(reportView==='overview'){const best=sessions.length?Math.max(...sessions.map(x=>Number(x.net)||0)):0,worst=sessions.length?Math.min(...sessions.map(x=>Number(x.net)||0)):0;html=`<div class="report-kpis"><div class="report-kpi"><span>NET AP P/L</span><b class="${net>=0?'good':'bad'}">${money(net)}</b></div><div class="report-kpi"><span>SESSIONS</span><b>${sessions.length}</b></div><div class="report-kpi"><span>WIN RATE</span><b>${sessions.length?(wins.length/sessions.length*100).toFixed(1):'0.0'}%</b></div><div class="report-kpi"><span>FP CASH</span><b>${money(fpCash)}</b></div></div><section class="report-card"><h3>Session Analytics</h3><table class="data-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total deployed</td><td>${money(deployed)}</td></tr><tr><td>P/L per $1,000 deployed</td><td>${deployed?money(net/deployed*1000):'$0.00'}</td></tr><tr><td>Average session</td><td>${sessions.length?money(net/sessions.length):'$0.00'}</td></tr><tr><td>Best session</td><td class="good">${money(best)}</td></tr><tr><td>Worst session</td><td class="bad">${money(worst)}</td></tr><tr><td>Winning / losing</td><td>${wins.length} / ${losses.length}</td></tr></table></section>`;
+function renderReports(){if(!$('reportsContent'))return;const r=reportFiltered(),sessions=(r.sessions||[]).filter(x=>x.status==='CLOSED'),fp=r.freePlay||[];const net=sum(sessions,x=>x.net),deployed=sum(sessions,x=>x.totalDeployed),handpays=sum(sessions,x=>x.handpays),wins=sessions.filter(x=>Number(x.net)>0),losses=sessions.filter(x=>Number(x.net)<0),fpFace=sum(fp,x=>x.faceValue),fpCash=sum(fp,x=>x.cashOut),conv=fpFace?fpCash/fpFace:0;
+ let html='';if(reportView==='overview'){const best=sessions.length?Math.max(...sessions.map(x=>Number(x.net)||0)):0,worst=sessions.length?Math.min(...sessions.map(x=>Number(x.net)||0)):0;html=`<div class="report-kpis"><div class="report-kpi"><span>NET AP P/L</span><b class="${net>=0?'good':'bad'}">${money(net)}</b></div><div class="report-kpi"><span>SESSIONS</span><b>${sessions.length}</b></div><div class="report-kpi"><span>WIN RATE</span><b>${sessions.length?(wins.length/sessions.length*100).toFixed(1):'0.0'}%</b></div><div class="report-kpi"><span>FP CASH</span><b>${money(fpCash)}</b></div></div><section class="report-card"><h3>Session Analytics</h3><table class="data-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total deployed</td><td>${money(deployed)}</td></tr><tr><td>Handpays received</td><td>${money(handpays)}</td></tr><tr><td>P/L per $1,000 deployed</td><td>${deployed?money(net/deployed*1000):'$0.00'}</td></tr><tr><td>Average session</td><td>${sessions.length?money(net/sessions.length):'$0.00'}</td></tr><tr><td>Best session</td><td class="good">${money(best)}</td></tr><tr><td>Worst session</td><td class="bad">${money(worst)}</td></tr><tr><td>Winning / losing</td><td>${wins.length} / ${losses.length}</td></tr></table></section>`;
  const months=groupBy(sessions,x=>monthKey(x.ts||x.date));const fpMonths=groupBy(fp,x=>monthKey(x.ts));const keys=[...new Set([...Object.keys(months),...Object.keys(fpMonths)])].filter(Boolean).sort().reverse();html+=`<section class="report-card"><h3>Monthly Summary</h3><table class="data-table"><tr><th>Month</th><th>AP P/L</th><th>FP Cash</th><th>Combined</th></tr>${keys.map(k=>{const p=sum(months[k]||[],x=>x.net),f=sum(fpMonths[k]||[],x=>x.cashOut);return `<tr><td>${k}</td><td class="${p>=0?'good':'bad'}">${money(p)}</td><td>${money(f)}</td><td>${money(p+f)}</td></tr>`}).join('')||'<tr><td colspan="4">No data</td></tr>'}</table></section>`;
  const pts=(r.reconciliations||[]).map(x=>({v:Number(x.expected)||0}));html+=`<section class="report-card"><h3>Bankroll History</h3>${chartSvg(pts)}</section>`}
  else if(reportView==='casino'){const g=groupBy(sessions,x=>x.casino),rows=Object.entries(g).map(([k,a])=>({k,n:a.length,net:sum(a,x=>x.net),dep:sum(a,x=>x.totalDeployed),wins:a.filter(x=>x.net>0).length})).sort((a,b)=>b.net-a.net);const max=Math.max(1,...rows.map(x=>Math.abs(x.net)));html=`<section class="report-card"><h3>Casino Performance</h3>${rows.map(x=>`<div class="bar-row"><span>${esc(x.k)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(2,Math.abs(x.net)/max*100)}%"></div></div><b class="${x.net>=0?'good':'bad'}">${money(x.net)}</b></div>`).join('')||'<div class="sub">No sessions in period.</div>'}</section><section class="report-card"><table class="data-table"><tr><th>Casino</th><th>Sessions</th><th>Win%</th><th>Deployed</th><th>ROI</th></tr>${rows.map(x=>`<tr><td>${esc(x.k)}</td><td>${x.n}</td><td>${(x.wins/x.n*100).toFixed(0)}%</td><td>${money0(x.dep)}</td><td>${x.dep?(x.net/x.dep*100).toFixed(1):'0'}%</td></tr>`).join('')}</table></section>`;const pg=groupBy(sessions,x=>x.playerName);const pr=Object.entries(pg).map(([k,a])=>({k,n:a.length,net:sum(a,x=>x.net)})).sort((a,b)=>b.net-a.net);html+=`<section class="report-card"><h3>Player / Card Performance</h3><table class="data-table"><tr><th>Player / Card</th><th>Sessions</th><th>P/L</th></tr>${pr.map(x=>`<tr><td>${esc(x.k)}</td><td>${x.n}</td><td class="${x.net>=0?'good':'bad'}">${money(x.net)}</td></tr>`).join('')}</table></section>`}
  else if(reportView==='fp'){const earned=round2(fpCash*.15),payments=sum(r.payments||[],x=>x.amount),payable=Math.max(0,round2(earned-payments));html=`<div class="report-kpis"><div class="report-kpi"><span>FACE VALUE</span><b>${money(fpFace)}</b></div><div class="report-kpi"><span>ACTUAL CASH</span><b>${money(fpCash)}</b></div><div class="report-kpi"><span>CONVERSION</span><b>${(conv*100).toFixed(1)}%</b></div><div class="report-kpi"><span>15% EARNED</span><b>${money(earned)}</b></div></div>`;const fg=groupBy(fp,x=>x.casino),rows=Object.entries(fg).map(([k,a])=>({k,face:sum(a,x=>x.faceValue),cash:sum(a,x=>x.cashOut)})).sort((a,b)=>b.cash-a.cash);html+=`<section class="report-card"><h3>Free Play by Casino</h3><table class="data-table"><tr><th>Casino</th><th>Face</th><th>Cash</th><th>Conv.</th></tr>${rows.map(x=>`<tr><td>${esc(x.k)}</td><td>${money0(x.face)}</td><td>${money0(x.cash)}</td><td>${x.face?(x.cash/x.face*100).toFixed(1):0}%</td></tr>`).join('')}</table></section>`;
  const snaps=r.scheduleSnapshots||[],snapMonths=groupBy(snaps,x=>x.monthKey),colMonths=groupBy(fp,x=>monthKey(x.ts));const mk=[...new Set([...Object.keys(snapMonths),...Object.keys(colMonths)])].filter(Boolean).sort().reverse();html+=`<section class="report-card"><h3>Schedule vs Collection</h3><table class="data-table"><tr><th>Month</th><th>Scheduled</th><th>Collected Face</th><th>Progress</th></tr>${mk.map(k=>{const s=sum(snaps[k]||[],x=>x.amount),c=sum(colMonths[k]||[],x=>x.faceValue);return `<tr><td>${k}</td><td>${money0(s)}</td><td>${money0(c)}</td><td>${s?Math.min(999,c/s*100).toFixed(1):'—'}%</td></tr>`}).join('')||'<tr><td colspan="4">Schedule snapshots begin with v8.0.</td></tr>'}</table><div class="sub">Progress compares scheduled known face value with recorded free-play face value. Unknown schedule amounts are excluded.</div></section><section class="report-card"><h3>15% Pay History</h3><div class="sub">Earned ${money(earned)} · Paid ${money(payments)} · Current calculated balance ${money(payable)}</div><table class="data-table"><tr><th>Date</th><th>Payment</th><th>Note</th></tr>${(r.payments||[]).slice().reverse().map(x=>`<tr><td>${esc((x.ts||'').slice(0,10))}</td><td>${money(x.amount)}</td><td>${esc(x.note||'')}</td></tr>`).join('')||'<tr><td colspan="3">No payments in period.</td></tr>'}</table></section>`}
- else{const corrections=r.corrections||[],recs=r.reconciliations||[],largeLosses=sessions.filter(x=>Number(x.net)<=-1000).sort((a,b)=>a.net-b.net),highReload=sessions.filter(x=>Number(x.reloads)>=2000).sort((a,b)=>b.reloads-a.reloads);html=`<div class="report-kpis"><div class="report-kpi"><span>CORRECTIONS</span><b>${corrections.length}</b></div><div class="report-kpi"><span>RECON CHECKS</span><b>${recs.length}</b></div><div class="report-kpi"><span>LOSSES ≤ -$1K</span><b>${largeLosses.length}</b></div><div class="report-kpi"><span>RELOADS ≥ $2K</span><b>${highReload.length}</b></div></div><section class="report-card"><h3>Exceptions / Audit</h3>${largeLosses.slice(0,10).map(x=>`<div class="audit-item"><b class="bad">${money(x.net)}</b> · ${esc(x.casino)}<div class="sub">${esc(x.playerName)} · deployed ${money(x.totalDeployed)}</div></div>`).join('')}${highReload.slice(0,10).map(x=>`<div class="audit-item"><b>${money(x.reloads)} reloads</b> · ${esc(x.casino)}<div class="sub">${esc(x.playerName)}</div></div>`).join('')||'<div class="sub">No flagged exceptions in this period.</div>'}</section><section class="report-card"><h3>Reconciliation History</h3><table class="data-table"><tr><th>Date</th><th>Expected</th><th>Physical</th><th>Variance</th></tr>${recs.slice().reverse().map(x=>`<tr><td>${esc((x.ts||'').slice(0,10))}</td><td>${money(x.expected)}</td><td>${money(x.physical)}</td><td class="${Math.abs(x.variance)<.01?'good':'bad'}">${money(x.variance)}</td></tr>`).join('')||'<tr><td colspan="4">History begins with v8.0 reconciliations.</td></tr>'}</table></section><section class="report-card"><h3>Correction Log</h3>${corrections.slice().reverse().slice(0,30).map(x=>`<div class="audit-item"><b>${esc(x.field)}</b>: ${esc(x.original)} → ${esc(x.corrected)}<div class="sub">${esc((x.ts||'').slice(0,10))} · ${esc(x.targetType)} · ${esc(x.reason||'No reason')}</div></div>`).join('')||'<div class="sub">No corrections in this period.</div>'}</section>`}
+ else{const corrections=r.corrections||[],recs=r.reconciliations||[],largeLosses=sessions.filter(x=>Number(x.net)<=-1000).sort((a,b)=>a.net-b.net),highReload=sessions.filter(x=>Number(x.reloads)>=2000).sort((a,b)=>b.reloads-a.reloads);html=`<div class="report-kpis"><div class="report-kpi"><span>CORRECTIONS</span><b>${corrections.length}</b></div><div class="report-kpi"><span>RECON CHECKS</span><b>${recs.length}</b></div><div class="report-kpi"><span>LOSSES ≤ -$1K</span><b>${largeLosses.length}</b></div><div class="report-kpi"><span>RELOADS ≥ $2K</span><b>${highReload.length}</b></div></div><section class="report-card"><h3>Exceptions / Audit</h3>${largeLosses.slice(0,10).map(x=>`<div class="audit-item"><b class="bad">${money(x.net)}</b> · ${esc(x.casino)}<div class="sub">${esc(x.playerName)} · deployed ${money(x.totalDeployed)}</div></div>`).join('')}${highReload.slice(0,10).map(x=>`<div class="audit-item"><b>${money(x.reloads)} reloads</b> · ${esc(x.casino)}<div class="sub">${esc(x.playerName)}</div></div>`).join('')||'<div class="sub">No flagged exceptions in this period.</div>'}</section><section class="report-card"><h3>Reconciliation History</h3><table class="data-table"><tr><th>Date</th><th>Expected</th><th>Physical</th><th>Variance</th></tr>${recs.slice().reverse().map(x=>`<tr><td>${esc((x.ts||'').slice(0,10))}</td><td>${money(x.expected)}</td><td>${money(x.physical)}</td><td class="${Math.abs(x.variance)<.01?'good':'bad'}">${money(x.variance)}</td></tr>`).join('')||'<tr><td colspan="4">History begins with v8.0 reconciliations.</td></tr>'}</table></section><section class="report-card"><h3>Bankroll Movements</h3><table class="data-table"><tr><th>Date</th><th>Type</th><th>Amount</th><th>Impact</th></tr>${(r.adjustments||[]).slice().reverse().map(x=>`<tr><td>${esc((x.ts||'').slice(0,10))}</td><td>${esc(x.type||'')}</td><td>${money(x.amount)}</td><td class="${Number(x.impact)>=0?'good':'bad'}">${Number(x.impact)>=0?'+':''}${money(x.impact)}</td></tr>`).join('')||'<tr><td colspan="4">No bankroll movements in this period.</td></tr>'}</table></section><section class="report-card"><h3>Correction Log</h3>${corrections.slice().reverse().slice(0,30).map(x=>`<div class="audit-item"><b>${esc(x.field)}</b>: ${esc(x.original)} → ${esc(x.corrected)}<div class="sub">${esc((x.ts||'').slice(0,10))} · ${esc(x.targetType)} · ${esc(x.reason||'No reason')}</div></div>`).join('')||'<div class="sub">No corrections in this period.</div>'}</section>`}
  $('reportsContent').innerHTML=html}
 
 function setScheduleView(view){scheduleView=['date','casino','calendar'].includes(view)?view:'date';renderSchedule()}
@@ -639,7 +720,7 @@ async function bootstrapRemote(keyOverride=syncKey){
   bootstrapReady=true;cloudError='';
   await metaSet('baseline',baseline);
   if(pending().length===0){
-    if(data.state?.session) localState={active:{sessionId:data.state.session,casino:data.state.casino,playerName:data.state.playerName,initial:Number(data.state.initial)||0,reloads:Number(data.state.reloads)||0,totalDeployed:Number(data.state.totalDeployed)||0},lastReload:data.lastReload||null};
+    if(data.state?.session) localState={active:{sessionId:data.state.session,casino:data.state.casino,playerName:data.state.playerName,initial:Number(data.state.initial)||0,reloads:Number(data.state.reloads)||0,totalDeployed:Number(data.state.totalDeployed)||0,handpays:Number(data.state.handpays)||0},lastReload:data.lastReload||null};
     else localState=defaultState();
     await saveState();
   }
