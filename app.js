@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.5.1';
+const APP_VERSION='8.5.2';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -209,7 +209,7 @@ async function saveFreePlay(){
   if(faceRaw===''||!Number.isFinite(face)||face<=0){setStatus('Enter the free-play face value.');return}
   if(cashRaw===''||!Number.isFinite(cash)||cash<0){setStatus('Enter the actual cash-out.');return}
   const ev=event('freeplay',{casino,playerName:player,faceValue:face,cashOut:cash});
-  await commitLocal(ev,()=>{$('fpFaceValue').value='';$('fpCashOut').value=''},'Free play recorded');
+  await commitLocal(ev,()=>{$('fpPlayerName').value='';$('fpFaceValue').value='';$('fpCashOut').value=''},'Free play recorded');
 }
 async function settleFreePlay(){
   const v=viewData(),due=v.fpPayable;
