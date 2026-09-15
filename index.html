@@ -13,7 +13,7 @@
 @media (max-width:420px){.calculator-choice{min-height:80px;padding:14px 15px}.calculator-choice .calc-name{font-size:15px}.calculator-choice .calc-desc{font-size:11px}}
 </style></head>
 <body><main>
-<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.6.0</div></div><div id="syncBadge" class="badge">Starting…</div></header>
+<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.6.1</div></div><div id="syncBadge" class="badge">Starting…</div></header>
 <div id="status" class="status">Ready</div>
 
 <section id="pageHome" class="page">
@@ -104,7 +104,7 @@
 
 <section id="pageMore" class="page" hidden>
   <div class="page-title"><h2>More</h2><div class="sub">Corrections, payments and system settings</div></div>
-  <section class="card highlight"><div class="section-kicker">FREE PLAY PAY</div><div id="fpPayable" class="hero">$0.00</div><div id="fpPayDetail" class="sub"></div><button id="settleBtn" class="gold" onclick="settleFreePlay()">PAY MY 15% FROM BANKROLL</button><div class="sub">Records the fee as paid, removes the same amount from expected bankroll, and marks the corresponding Rusty collections paid after backup.</div></section>
+  <section class="card highlight"><div class="section-kicker">FREE PLAY PAY</div><div id="fpPayable" class="hero">$0.00</div><div id="fpPayDetail" class="sub"></div><button id="settleBtn" class="gold" onclick="settleFreePlay()">PAY MY 15% FROM BANKROLL</button><div class="sub">Pays whole dollars only. Any cents left in the calculated fee remain payable and carry forward. The same whole-dollar amount is removed from expected bankroll and mirrored to Rusty after backup.</div></section>
   <section class="card">
     <div class="section-kicker">BANKROLL MOVEMENT</div>
     <div class="sub">Use this only when money actually enters or permanently leaves the operating bankroll.</div>
@@ -130,4 +130,4 @@
 </section>
 </main>
 <nav class="bottom-nav" aria-label="Main navigation"><button id="navHome" class="nav-item active" onclick="showPage('home')"><span class="nav-icon">⌂</span><span>Home</span></button><button id="navSchedule" class="nav-item" onclick="showPage('schedule')"><span class="nav-icon">▦</span><span>Schedule</span></button><button id="navAdd" class="nav-item nav-add" onclick="showPage('add')"><span class="plus">+</span><span>Add Entry</span></button><button id="navReports" class="nav-item" onclick="showPage('reports')"><span class="nav-icon">▥</span><span>Reports</span></button><button id="navMore" class="nav-item" onclick="showPage('more')"><span class="nav-icon">•••</span><span>More</span></button></nav>
-<script src="config.js?v=8.6.0"></script><script src="app.js?v=8.6.0"></script></body></html>
+<script src="config.js?v=8.6.1"></script><script src="app.js?v=8.6.1"></script></body></html>

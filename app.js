@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.6.0';
+const APP_VERSION='8.6.1';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -288,10 +288,14 @@ async function saveFpCoinIn(){
 async function settleFreePlay(){
   const v=viewData(),due=v.fpPayable;
   if(due<=0){setStatus('There is no free-play payment balance due.');return}
-  if(due>v.expected){setStatus('The fee due exceeds the current expected bankroll. Reconcile or correct the ledger before paying it from the roll.');return}
-  if(!confirm('Pay yourself '+money(due)+' from the bankroll? This will clear the 15% payable, reduce expected bankroll by the same amount, and mark the corresponding Rusty free-play collections paid when sync completes.')) return;
-  const ev=event('fp_settlement',{amount:due,note:'Free-play commission paid from bankroll'});
-  await commitLocal(ev,null,'15% payment recorded · expected bankroll reduced · Rusty settlement mirror queued');
+  const amount=Math.floor(due+1e-9);
+  if(amount<=0){setStatus('Less than $1 is currently payable. It will carry forward until the balance reaches a whole dollar.');return}
+  if(amount>v.expected){setStatus('The whole-dollar fee payment exceeds the current expected bankroll. Reconcile or correct the ledger before paying it from the roll.');return}
+  const remainder=round2(due-amount);
+  const remainderText=remainder>0?(' The remaining '+money(remainder)+' will stay payable and carry forward.'):' This will clear the current payable balance.';
+  if(!confirm('Pay yourself '+money0(amount)+' from the bankroll?'+remainderText+' Expected bankroll will be reduced by '+money0(amount)+' and the corresponding Rusty free-play collections will be marked paid/partially paid when sync completes.')) return;
+  const ev=event('fp_settlement',{amount:amount,note:'Free-play commission paid from bankroll (whole-dollar cash settlement)'});
+  await commitLocal(ev,null,'Whole-dollar 15% payment recorded · residual cents carry forward · Rusty settlement mirror queued');
 }
 
 function bankrollAdjustmentLabel(kind){
