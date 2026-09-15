@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.6.7';
+const APP_VERSION='8.6.9';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -567,10 +567,10 @@ function render(){
   if($('newSession'))$('newSession').hidden=!!a;if($('activeSession'))$('activeSession').hidden=!a;
   if(a){$('activeCasino').textContent=a.casino;$('activePlayer').textContent='Player / Card: '+a.playerName+((Number(a.makeupShare)||100)<100?' · CHOP '+(Number(a.makeupShare)||100)+'%':'');const handpays=Number(a.handpays)||0,totalDeployed=Number(a.totalDeployed)||0;$('sessionInitial').textContent=money0(Number(a.initial)||0);$('sessionReloads').textContent=money0(Number(a.reloads)||0);$('sessionTotalDeployed').textContent=money0(totalDeployed);$('sessionHandpayTotal').textContent=money0(handpays);const realized=round2(handpays-totalDeployed);$('sessionRealizedPosition').textContent=(realized<0?'−':'')+money(Math.abs(realized));$('sessionRealizedPosition').className='big '+(realized>=0?'good':'bad');const lr=localState.lastReload;$('lastReload').textContent=lr?money(lr.amount).replace('.00','')+' at '+new Date(lr.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None yet';$('sessionHandpays').textContent=money(handpays)}
   const cloudLoaded=bootstrapReady||!!baseline.syncAt;
-  $('homeExpected').textContent=cloudLoaded?money0(v.expected):'—';$('homePhysical').textContent=cloudLoaded?money0(v.physical):'—';$('homeVariance').textContent=cloudLoaded?((v.variance<0?'−':'')+money0(Math.abs(v.variance))):'—';$('homeVariance').className=cloudLoaded?(v.variance===0?'good':'bad'):'';
-  $('homeMakeup').textContent=cloudLoaded&&v.makeupOk?((v.makeup<0?'−':'')+money0(Math.abs(v.makeup))):'—';$('homeMakeup').className=cloudLoaded&&v.makeupOk?(v.makeup>=0?'good':'bad'):'';
-  $('homeFpPayable').textContent=cloudLoaded?money0(v.fpPayable):'—';$('homeFpCash').textContent=cloudLoaded?money0(v.fpCash):'—';$('homeScheduled').textContent=cloudLoaded&&sched.ok?money0(sched.totalOffers):'—';$('homeScheduledPay').textContent=cloudLoaded&&sched.ok?money0(sched.offerPay):'—';
-  $('homeActive').hidden=!a;if(a){$('homeActiveCasino').textContent=a.casino;$('homeActivePlayer').textContent=a.playerName+((Number(a.makeupShare)||100)<100?' · CHOP '+(Number(a.makeupShare)||100)+'%':'');$('homeDeployed').textContent=money0(a.totalDeployed);$('homeReloads').textContent=money0(a.reloads);$('homeHandpays').textContent=money0(Number(a.handpays)||0);$('homeLastReload').textContent=localState.lastReload?new Date(localState.lastReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
+  $('homeExpected').textContent=cloudLoaded?moneyDash(v.expected):'—';$('homePhysical').textContent=cloudLoaded?moneyDash(v.physical):'—';$('homeVariance').textContent=cloudLoaded?((v.variance<0?'−':'')+moneyDash(Math.abs(v.variance))):'—';$('homeVariance').className=cloudLoaded?(v.variance===0?'good':'bad'):'';
+  $('homeMakeup').textContent=cloudLoaded&&v.makeupOk?((v.makeup<0?'−':'')+moneyDash(Math.abs(v.makeup))):'—';$('homeMakeup').className=cloudLoaded&&v.makeupOk?(v.makeup>=0?'good':'bad'):'';
+  $('homeFpPayable').textContent=cloudLoaded?moneyDash(v.fpPayable):'—';$('homeFpCash').textContent=cloudLoaded?moneyDash(v.fpCash):'—';$('homeScheduled').textContent=cloudLoaded&&sched.ok?moneyDash(sched.totalOffers):'—';$('homeScheduledPay').textContent=cloudLoaded&&sched.ok?moneyDash(sched.offerPay):'—';
+  $('homeActive').hidden=!a;if(a){$('homeActiveCasino').textContent=a.casino;$('homeActivePlayer').textContent=a.playerName+((Number(a.makeupShare)||100)<100?' · CHOP '+(Number(a.makeupShare)||100)+'%':'');$('homeDeployed').textContent=moneyDash(a.totalDeployed);$('homeReloads').textContent=moneyDash(a.reloads);$('homeHandpays').textContent=moneyDash(Number(a.handpays)||0);$('homeLastReload').textContent=localState.lastReload?new Date(localState.lastReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
   $('fpPayable').textContent=money(v.fpPayable);$('fpPayDetail').textContent=money(v.fpRecordedEarned)+' recorded earned · '+money(v.fpLegacy)+' legacy opening payable · '+money(v.fpPaid)+' paid';$('settleBtn').disabled=actionLocked||!cloudLoaded||v.fpPayable<=0;
   $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'good':'bad');$('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
   const online=navigator.onLine,p=v.pending,badge=$('syncBadge');if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP'}else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}else if(cloudError&&!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC ERROR'}else if(!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC NEEDED'}else{badge.className='badge '+(!online||p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
@@ -579,6 +579,7 @@ function render(){
 }
 function esc(v){return String(v??'').replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
 function money0(n){return '$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0})}
+function moneyDash(n){return '$'+Math.trunc(Number(n)||0).toLocaleString()}
 
 // Phoenix Link calculator. Constants mirror the denomination-specific models in
 // "Copy of PL updated" -> "Additional PL Data". Bet-range and all-data models
@@ -796,7 +797,7 @@ function renderSchedule(){
 }
 function renderWorkOffer(x){
   const amt=x.unknown?'IDK':money0(x.amount);
-  const details=[x.time?esc(x.time):'',x.agent?`Agent ${esc(x.agent)}`:'',x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean);
+  const details=[x.time?esc(x.time):'',x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean);
   if(x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount))details.push(`FP ${esc(x.fpRaw)}`);
   return `<div class="work-offer-row"><div class="work-offer-main"><div class="work-offer-name">${esc(x.card||'No card')}</div><div class="work-offer-meta">${details.join(' · ')||'No additional details'}</div></div><div class="work-offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
 }
