@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.7.2';
+const APP_VERSION='8.7.3';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -930,7 +930,7 @@ async function syncNow(manual=false){
 }
 
 async function init(){
-  if('serviceWorker'in navigator){try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!sessionStorage.getItem('ap-sw-reloaded')){sessionStorage.setItem('ap-sw-reloaded','1');location.reload()}})}catch(e){}}db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();bootstrapReady=!!baseline.syncAt;localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();populateFpPlayers();setEntryView('session');showPage('home');render();
+  if('serviceWorker'in navigator){try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!sessionStorage.getItem('ap-sw-reloaded')){sessionStorage.setItem('ap-sw-reloaded','1');location.reload()}})}catch(e){}}db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();bootstrapReady=!!baseline.syncAt;localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();populateFpPlayers();setEntryView('session');render();
   if(configured()&&navigator.onLine)await syncNow(false);else if(!endpointConfigured())setStatus('Local mode ready. Configure the Cloudflare Worker URL.');else if(!syncKey)setStatus('Ledger data unavailable — enter and verify the private sync key in More.');else if(!bootstrapReady)setStatus('Ledger data unavailable — sync required.');window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});setInterval(()=>{if(!document.hidden)syncNow(false)},20000)
 }
 init().catch(e=>setStatus('Startup error: '+e.message));
