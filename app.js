@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.6.2';
+const APP_VERSION='8.6.3';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -213,10 +213,25 @@ async function finishSession(){
   const handpays=Number(a.handpays)||0;const ev=event('cashout',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:n,totalDeployed:a.totalDeployed,handpays,tierCredits:round2(tierCredits),net:round2(n+handpays-a.totalDeployed)});
   await commitLocal(ev,()=>{localState.active=null;localState.lastReload=null;$('cashOutAmount').value='';$('tierCredits').value=''},'Session closed');
 }
+function fpPlayerList(){
+  return [...new Set((baseline.rustyPlayers||[]).map(x=>String(x||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+}
 function populateFpPlayers(){
-  const dl=$('fpPlayerOptions');if(!dl)return;
-  const players=[...new Set((baseline.rustyPlayers||[]).map(x=>String(x||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-  dl.innerHTML=players.map(x=>'<option value="'+esc(x)+'"></option>').join('');
+  const dd=$('fpPlayerDropdown');if(dd)dd.hidden=true;
+}
+function filterFpPlayers(){
+  const input=$('fpPlayerName'),dd=$('fpPlayerDropdown');if(!input||!dd)return;
+  const q=input.value.trim().toLowerCase();
+  const players=fpPlayerList();
+  const matches=(q?players.filter(x=>x.toLowerCase().includes(q)):players).slice(0,40);
+  if(!players.length){dd.innerHTML='<div class="fp-player-empty">Player list unavailable. Sync while online and try again.</div>';dd.hidden=false;return}
+  if(!matches.length){dd.innerHTML='<div class="fp-player-empty">No matching player card names.</div>';dd.hidden=false;return}
+  dd.innerHTML=matches.map(x=>'<button type="button" class="fp-player-option" data-player="'+esc(x)+'">'+esc(x)+'</button>').join('');
+  dd.querySelectorAll('.fp-player-option').forEach(btn=>btn.addEventListener('click',()=>selectFpPlayer(btn.dataset.player)));
+  dd.hidden=false;
+}
+function selectFpPlayer(name){
+  const input=$('fpPlayerName'),dd=$('fpPlayerDropdown');if(input)input.value=name||'';if(dd)dd.hidden=true;
 }
 function canonicalFpPlayer(raw){
   const entered=String(raw||'').trim();if(!entered)return '';
@@ -232,7 +247,7 @@ async function saveFreePlay(){
   if(faceRaw===''||!Number.isFinite(face)||face<=0){setStatus('Enter the free-play face value.');return}
   if(cashRaw===''||!Number.isFinite(cash)||cash<0){setStatus('Enter the actual cash-out.');return}
   const ev=event('freeplay',{casino,playerName:player,faceValue:face,cashOut:cash});
-  await commitLocal(ev,()=>{$('fpPlayerName').value='';$('fpFaceValue').value='';$('fpCashOut').value=''},'Free play recorded');
+  await commitLocal(ev,()=>{$('fpPlayerName').value='';$('fpFaceValue').value='';$('fpCashOut').value='';const dd=$('fpPlayerDropdown');if(dd)dd.hidden=true},'Free play recorded');
 }
 
 function freePlayCollections(){
@@ -877,3 +892,6 @@ async function init(){
   if(configured()&&navigator.onLine)await syncNow(false);else if(!endpointConfigured())setStatus('Local mode ready. Configure the Cloudflare Worker URL.');else if(!syncKey)setStatus('Ledger data unavailable — enter and verify the private sync key in More.');else if(!bootstrapReady)setStatus('Ledger data unavailable — sync required.');window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});setInterval(()=>{if(!document.hidden)syncNow(false)},20000)
 }
 init().catch(e=>setStatus('Startup error: '+e.message));
+
+// Close the controlled Free Play player picker when tapping elsewhere.
+document.addEventListener('pointerdown',e=>{const box=e.target.closest&&e.target.closest('.fp-player-search');if(!box){const dd=$('fpPlayerDropdown');if(dd)dd.hidden=true}});
