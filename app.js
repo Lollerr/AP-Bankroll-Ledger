@@ -1,11 +1,12 @@
 'use strict';
-const APP_VERSION='8.6.6';
+const APP_VERSION='8.6.7';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
 let actionLocked=false,syncRunning=false;
 let bootstrapReady=false,cloudError='';
 let currentPage='home',scheduleView='date',entryView='session',reportView='overview',selectedFpCollectionId='';
+let scheduleSelectedDate='',schedulePriorOpen=false,scheduleJumpOpen=false;
 
 const $=id=>document.getElementById(id);
 const money=n=>'$'+Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -770,6 +771,18 @@ function renderReports(){if(!$('reportsContent'))return;const r=reportFiltered()
 
 function setScheduleView(view){scheduleView=['date','casino','calendar'].includes(view)?view:'date';renderSchedule()}
 function scheduleData(){return baseline.scheduleData||{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]}}
+function localDateKey(d=new Date()){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
+function dateFromKey(k){const m=String(k||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?new Date(Number(m[1]),Number(m[2])-1,Number(m[3])):new Date()}
+function addDaysKey(k,n){const d=dateFromKey(k);d.setDate(d.getDate()+n);return localDateKey(d)}
+function workDateLabel(k){const d=dateFromKey(k),today=localDateKey();const prefix=k===today?'TODAY · ':'';return prefix+d.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toUpperCase()}
+function scheduleDates(d){return [...new Set((d.entries||[]).map(x=>x.date).filter(Boolean))].sort()}
+function ensureScheduleDate(d){if(!scheduleSelectedDate)scheduleSelectedDate=localDateKey();return scheduleSelectedDate}
+function moveScheduleDate(n){scheduleSelectedDate=addDaysKey(ensureScheduleDate(scheduleData()),n);schedulePriorOpen=false;scheduleJumpOpen=false;renderSchedule()}
+function scheduleToday(){scheduleSelectedDate=localDateKey();schedulePriorOpen=false;scheduleJumpOpen=false;renderSchedule()}
+function toggleSchedulePrior(){schedulePriorOpen=!schedulePriorOpen;scheduleJumpOpen=false;renderSchedule()}
+function toggleScheduleJump(){scheduleJumpOpen=!scheduleJumpOpen;schedulePriorOpen=false;renderSchedule()}
+function jumpScheduleDate(){const el=$('scheduleJumpDate');if(el&&el.value){scheduleSelectedDate=el.value;scheduleJumpOpen=false;schedulePriorOpen=false;renderSchedule()}}
+function chooseScheduleDate(k){scheduleSelectedDate=k;schedulePriorOpen=false;scheduleJumpOpen=false;renderSchedule()}
 function renderSchedule(){
   if(!$('scheduleContent')) return;
   const d=scheduleData();
@@ -781,40 +794,39 @@ function renderSchedule(){
   if(!d.ok){$('scheduleContent').innerHTML='<div class="schedule-empty">Schedule data is not available yet. Connect to the internet and tap SYNC NOW.</div>';return}
   if(scheduleView==='casino') renderScheduleCasino(d); else if(scheduleView==='calendar') renderScheduleCalendar(d); else renderScheduleDate(d);
 }
-function renderScheduleDate(d){
-  const groups=new Map();
-  for(const x of d.entries||[]){if(!groups.has(x.date))groups.set(x.date,[]);groups.get(x.date).push(x)}
+function renderWorkOffer(x){
+  const amt=x.unknown?'IDK':money0(x.amount),detail=[x.time,x.card].filter(Boolean).map(esc).join(' · '),meta=[x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean).join(' · ');
+  return `<div class="offer-row"><div><div class="offer-location">${esc(x.card||'No card')}</div><div class="offer-detail">${detail||'No time/card detail'}${x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount)?` · FP ${esc(x.fpRaw)}`:''}</div>${meta?`<div class="offer-detail">${meta}</div>`:''}</div><div class="offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
+}
+function renderSelectedDay(d,date){
+  const rows=(d.entries||[]).filter(x=>x.date===date),by=new Map();
+  for(const x of rows){const k=x.location||'Unknown location';if(!by.has(k))by.set(k,[]);by.get(k).push(x)}
+  if(!rows.length)return `<div class="schedule-empty-day">No scheduled entries for ${esc(workDateLabel(date))}.</div>`;
   let html='';
-  for(const [date,rows] of groups){
-    const known=rows.reduce((a,x)=>a+(Number(x.amount)||0),0),unknown=rows.filter(x=>x.unknown).length;
-    const label=rows[0]?.dateLabel||date;
-    html+=`<section class="day-group"><div class="day-head"><span>${esc(label).toUpperCase()}</span><span>${money0(known)}${unknown?` <span class="pill">${unknown} IDK</span>`:''}</span></div>`;
-    for(const x of rows){
-      const amt=x.unknown?'IDK':money0(x.amount);
-      const detail=[x.time,x.card].filter(Boolean).map(esc).join(' · ');
-      const cardMeta=[x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean).join(' · ');
-      html+=`<div class="offer-row">${casinoIconSvg(x.location)}<div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${detail||'No time/card detail'}${x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount)?` · FP ${esc(x.fpRaw)}`:''}</div>${cardMeta?`<div class="offer-detail">${cardMeta}</div>`:''}</div><div class="offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
-    }
-    html+='</section>';
-  }
-  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown / To Be Determined</div><section class="day-group unknown-card"><div class="unknown-title day-head"><span>FP AMOUNT UNKNOWN</span><span>${d.unknown.length}</span></div>`;for(const x of d.unknown){const meta=[x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean).join(' · ');html+=`<div class="offer-row"><span class="casino-icon casino-generic"><span class="casino-icon-text">?</span></span><div><div class="offer-location">${esc(x.location||'Unknown location')}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')} · ${esc(x.time||'No time')}</div>${meta?`<div class="offer-detail">${meta}</div>`:''}</div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
-  $('scheduleContent').innerHTML=html||'<div class="schedule-empty">No entries for this month.</div>';
+  for(const [location,items] of by){const total=items.reduce((a,x)=>a+(Number(x.amount)||0),0),unknown=items.filter(x=>x.unknown).length;html+=`<section class="casino-work-group"><div class="casino-work-head">${casinoIconSvg(location)}<div class="casino-work-title"><b>${esc(location)}</b><span>${items.length} pickup${items.length===1?'':'s'}${unknown?` · ${unknown} IDK`:''}</span></div><div class="casino-work-total">${money0(total)}</div></div>${items.map(renderWorkOffer).join('')}</section>`}
+  return html;
+}
+function renderScheduleDate(d){
+  const selected=ensureScheduleDate(d),today=localDateKey(),dates=scheduleDates(d),prior=dates.filter(k=>k<selected).slice(-7).reverse();
+  const selectedRows=(d.entries||[]).filter(x=>x.date===selected),selectedTotal=selectedRows.reduce((a,x)=>a+(Number(x.amount)||0),0);
+  let html=`<div class="schedule-worknav"><div class="schedule-date-row"><button onclick="moveScheduleDate(-1)" aria-label="Previous day">‹</button><div class="schedule-date-main"><b>${esc(workDateLabel(selected))}</b><span>${selectedRows.length} pickup${selectedRows.length===1?'':'s'} · ${money0(selectedTotal)}</span></div><button onclick="moveScheduleDate(1)" aria-label="Next day">›</button></div><div class="schedule-tools"><button onclick="toggleSchedulePrior()">PRIOR DAYS${prior.length?` (${prior.length})`:''}</button><button onclick="toggleScheduleJump()">JUMP TO DATE</button></div>${selected!==today?`<button class="small return-today" onclick="scheduleToday()">RETURN TO TODAY</button>`:''}<div id="scheduleJump" class="schedule-jump" ${scheduleJumpOpen?'':'hidden'}><input id="scheduleJumpDate" type="date" value="${esc(selected)}"><button class="small gold" onclick="jumpScheduleDate()">GO</button></div></div>`;
+  if(schedulePriorOpen){html+='<section class="schedule-prior">';if(prior.length){for(const k of prior){const rows=(d.entries||[]).filter(x=>x.date===k),total=rows.reduce((a,x)=>a+(Number(x.amount)||0),0),locs=[...new Set(rows.map(x=>x.location).filter(Boolean))];html+=`<button class="prior-day-btn" onclick="chooseScheduleDate('${esc(k)}')"><span><b>${esc(workDateLabel(k))}</b><br><span>${locs.map(esc).join(' · ')}</span></span><span>${rows.length} · ${money0(total)}</span></button>`}}else html+='<div class="schedule-empty-day">No earlier scheduled days in the loaded schedule.</div>';html+='</section>'}
+  html+=renderSelectedDay(d,selected);$('scheduleContent').innerHTML=html;
 }
 function renderScheduleCasino(d){
   let html='<section class="casino-breakdown"><div class="breakdown-head"><div>CASINO / LOCATION</div><div class="num">OFFERS</div><div class="num">TOTAL FP</div><div class="num">15%</div></div>';
   for(const x of d.breakdown||[]){html+=`<div class="breakdown-row"><div class="breakdown-location-wrap">${casinoIconSvg(x.location,true)}<div class="breakdown-location">${esc(x.location)}${x.unknownCount?` <span class="pill">${x.unknownCount} IDK</span>`:''}</div></div><div class="num">${x.offers}</div><div class="num">${money0(x.total)}</div><div class="num">${money(x.pay)}</div></div>`}
   html+='</section>';
-  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown Offers</div><section class="day-group unknown-card">`;for(const x of d.unknown){const meta=[x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean).join(' · ');html+=`<div class="offer-row"><span class="casino-icon casino-generic"><span class="casino-icon-text">?</span></span><div><div class="offer-location">${esc(x.location)}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')}</div>${meta?`<div class="offer-detail">${meta}</div>`:''}</div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
+  if((d.unknown||[]).length){html+=`<div class="schedule-section-title">Unknown Offers</div><section class="day-group unknown-card">`;for(const x of d.unknown){const meta=[x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean).join(' · ');html+=`<div class="offer-row">${casinoIconSvg(x.location)}<div><div class="offer-location">${esc(x.location)}</div><div class="offer-detail">${esc(x.dateLabel)} · ${esc(x.card||'No card')}</div>${meta?`<div class="offer-detail">${meta}</div>`:''}</div><div class="offer-amount unknown">${esc(x.fpRaw||'IDK')}</div></div>`}html+='</section>'}
   $('scheduleContent').innerHTML=html;
 }
 function renderScheduleCalendar(d){
   const [year,month]=String(d.monthKey||'').split('-').map(Number);if(!year||!month){$('scheduleContent').innerHTML='<div class="schedule-empty">Calendar unavailable.</div>';return}
   const by={};for(const x of d.entries||[]){if(!by[x.date])by[x.date]={total:0,count:0,unknown:0,locations:[]};by[x.date].total+=Number(x.amount)||0;by[x.date].count++;if(x.unknown)by[x.date].unknown++;if(x.location&&!by[x.date].locations.includes(x.location))by[x.date].locations.push(x.location)}
   const first=new Date(year,month-1,1),days=new Date(year,month,0).getDate();let html='<div class="calendar-grid">';for(const w of ['S','M','T','W','T','F','S'])html+=`<div class="cal-dow">${w}</div>`;for(let i=0;i<first.getDay();i++)html+='<div class="cal-day empty"></div>';
-  for(let day=1;day<=days;day++){const key=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,x=by[key];const icons=x?(x.locations||[]).slice(0,3).map(v=>casinoIconSvg(v,true)).join(''):'';const more=x&&x.locations.length>3?`<span class="cal-more">+${x.locations.length-3}</span>`:'';html+=`<div class="cal-day"><div class="cal-date">${day}</div>${x?`<div class="cal-icons">${icons}${more}</div><div class="cal-total">${money0(x.total)}</div><div class="cal-count">${x.count} offer${x.count===1?'':'s'}${x.unknown?` · ${x.unknown} IDK`:''}</div>`:''}</div>`}
+  for(let day=1;day<=days;day++){const key=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,x=by[key];const icons=x?(x.locations||[]).slice(0,3).map(v=>casinoIconSvg(v,true)).join(''):'';const more=x&&x.locations.length>3?`<span class="cal-more">+${x.locations.length-3}</span>`:'';html+=`<div class="cal-day" onclick="chooseScheduleDate('${key}');setScheduleView('date')"><div class="cal-date">${day}</div>${x?`<div class="cal-icons">${icons}${more}</div><div class="cal-total">${money0(x.total)}</div><div class="cal-count">${x.count} offer${x.count===1?'':'s'}${x.unknown?` · ${x.unknown} IDK`:''}</div>`:''}</div>`}
   html+='</div>';$('scheduleContent').innerHTML=html;
 }
-
 
 async function cloudRequest(path,{method='GET',body=null,timeout=18000,keyOverride=syncKey}={}){
   if(!endpointConfigured()) throw new Error('Cloud API is not configured');
