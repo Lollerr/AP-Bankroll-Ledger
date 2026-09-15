@@ -36,21 +36,66 @@
 .casino-work-group .work-offer-row:last-child{border-bottom:0}
 @media(max-width:390px){.work-offer-row{padding:11px 12px;gap:7px 10px}.work-offer-name{font-size:15px}.work-offer-meta{font-size:11px}.work-offer-amount{font-size:17px}}
 </style>
+
+<style>
+/* v8.7.0 compact dashboard */
+.dashboard-header{align-items:center;min-height:52px}
+.header-statuses{display:flex;align-items:center;justify-content:flex-end;gap:7px;min-width:0}
+.status-badge{max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pageHome{display:grid;gap:8px;align-content:start;padding-bottom:4px}
+#pageHome[hidden]{display:none}
+#pageHome .hero-card,#pageHome .card,#pageHome .metric-grid{margin-top:0;margin-bottom:0}
+#pageHome .hero-card{padding:12px 14px}
+#pageHome .home-bankroll{font-size:clamp(28px,8vw,38px);line-height:1.05;margin:3px 0 8px}
+#pageHome .home-row{gap:8px}
+#pageHome .home-row>div{padding:7px 9px}
+.home-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.home-metric-grid .metric{min-height:58px;padding:9px 10px}
+.home-metric-grid .metric span{font-size:10px;line-height:1.15}
+.home-metric-grid .metric b{font-size:20px;line-height:1.1;margin-top:4px}
+#homeMakeup,#homeMtdPl{font-size:20px}
+#pageHome #homeActive{padding:10px 12px}
+#pageHome #homeActive .mini-stats{margin-top:8px;gap:6px;grid-template-columns:repeat(4,minmax(0,1fr))}
+#pageHome #homeActive .mini-stats>div{padding:7px 5px;min-width:0}
+#pageHome #homeActive .mini-stats span{font-size:8px}
+#pageHome #homeActive .mini-stats b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-quick{padding:10px 12px}
+.home-quick .quick-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:7px}
+.home-quick .quick-grid button{min-height:42px;margin:0;padding:8px 6px}
+.nav-add .plus{position:relative;display:block;box-sizing:border-box;font-size:0;line-height:0}
+.nav-add .plus::before,.nav-add .plus::after{content:"";position:absolute;left:50%;top:50%;background:#10263a;border-radius:1px;transform:translate(-50%,-50%)}
+.nav-add .plus::before{width:22px;height:4px}
+.nav-add .plus::after{width:4px;height:22px}
+@media(max-height:760px){
+  #pageHome{gap:6px}
+  #pageHome .hero-card{padding:9px 12px}
+  #pageHome .home-bankroll{font-size:28px;margin:2px 0 5px}
+  #pageHome .home-row>div{padding:5px 7px}
+  .home-metric-grid{gap:6px}
+  .home-metric-grid .metric{min-height:50px;padding:7px 8px}
+  .home-metric-grid .metric b,#homeMakeup,#homeMtdPl{font-size:18px}
+  .home-quick{padding:8px 10px}
+  .home-quick .quick-grid button{min-height:36px;padding:6px 4px;font-size:11px}
+}
+@media(max-height:680px){
+  #pageHome .hero-label,#pageHome .section-kicker{font-size:9px}
+  #pageHome .home-bankroll{font-size:25px}
+  .home-metric-grid .metric{min-height:45px}
+  #pageHome #homeActive .mini-stats{margin-top:5px}
+}
+</style>
 </head>
 <body><main>
-<header class="app-header"><div><h1><span>AP</span> BANKROLL</h1><div class="sub">Slot advantage tracker · v8.6.9</div></div><div id="syncBadge" class="badge">Starting…</div></header>
-<div id="status" class="status">Ready</div>
+<header class="app-header dashboard-header"><div><h1><span>AP</span> BANKROLL</h1></div><div class="header-statuses"><div id="status" class="badge status-badge" title="Ready">READY</div><div id="syncBadge" class="badge">Starting…</div></div></header>
 
 <section id="pageHome" class="page">
   <section class="hero-card">
     <div class="hero-label">EXPECTED BANKROLL</div><div id="homeExpected" class="home-bankroll">$0.00</div>
     <div class="home-row"><div><span>PHYSICAL</span><strong id="homePhysical">$0.00</strong></div><div><span>VARIANCE</span><strong id="homeVariance">$0.00</strong></div></div>
   </section>
-  <section class="card compact makeup-card"><div class="section-kicker">CURRENT MAKEUP</div><div id="homeMakeup" class="big">—</div></section>
   <section id="homeActive" class="card" hidden><div class="section-kicker">ACTIVE SESSION</div><div class="row"><div><div id="homeActiveCasino" class="big"></div><div id="homeActivePlayer" class="sub"></div></div><button class="small gold" onclick="goAdd('session')">OPEN</button></div><div class="mini-stats"><div><span>DEPLOYED</span><b id="homeDeployed">$0</b></div><div><span>RELOADS</span><b id="homeReloads">$0</b></div><div><span>HANDPAYS</span><b id="homeHandpays">$0</b></div><div><span>LAST RELOAD</span><b id="homeLastReload">None</b></div></div></section>
-  <section class="metric-grid"><div class="metric"><span>15% FP PAYABLE</span><b id="homeFpPayable">$0.00</b></div><div class="metric"><span>ACTUAL FP CASH</span><b id="homeFpCash">$0.00</b></div><div class="metric"><span>SCHEDULED FP</span><b id="homeScheduled">—</b></div><div class="metric"><span>15% SCHEDULED</span><b id="homeScheduledPay">—</b></div></section>
-  <section class="card"><div class="section-kicker">QUICK ACTIONS</div><div class="quick-grid"><button onclick="goAdd('session')">PLAY SESSION</button><button class="gold" onclick="showCalculatorsHome()">CALCULATORS</button><button onclick="goAdd('freeplay')">FREE PLAY</button><button onclick="goAdd('reconcile')">RECONCILE</button><button onclick="showPage('schedule')">SCHEDULE</button></div></section>
-  <section class="card compact"><div class="row"><div><div class="section-kicker">BACKUP STATUS</div><div id="homeBackup" class="sub"></div></div><button class="small" onclick="syncNow(true)">SYNC</button></div></section>
+  <section class="metric-grid home-metric-grid"><div class="metric"><span>15% FP PAYABLE</span><b id="homeFpPayable">$0</b></div><div class="metric"><span>ACTUAL FP CASH</span><b id="homeFpCash">$0</b></div><div class="metric"><span>SCHEDULED FP</span><b id="homeScheduled">—</b></div><div class="metric"><span>15% SCHEDULED</span><b id="homeScheduledPay">—</b></div><div class="metric"><span>CURRENT MAKEUP</span><b id="homeMakeup">—</b></div><div class="metric"><span>MTD P/L</span><b id="homeMtdPl">—</b></div></section>
+  <section class="card home-quick"><div class="section-kicker">QUICK ACTIONS</div><div class="quick-grid"><button onclick="goAdd('session')">PLAY SESSION</button><button class="gold" onclick="showCalculatorsHome()">CALCULATORS</button><button onclick="goAdd('freeplay')">FREE PLAY</button><button onclick="goAdd('reconcile')">RECONCILE</button></div></section>
 </section>
 
 <section id="pageSchedule" class="page" hidden>
@@ -152,8 +197,9 @@
   </section>
   <section class="card"><div class="section-kicker">CORRECT AN ENTRY</div><div class="sub">Corrections preserve the audit trail.</div><select id="correctionTarget" onchange="loadCorrectionTarget()"></select><div id="correctionSourceDetail" class="sub"></div><div id="correctionEmpty" class="sub">Recent entries will appear here.</div><button class="small" onclick="refreshCorrectionEntries()">REFRESH ENTRIES</button><div id="sessionCorrection" hidden><div class="section-kicker spaced">SESSION CORRECTION</div><select id="corrSessionCasino"></select><input id="corrSessionPlayer" autocomplete="off" placeholder="Player / card name"><div class="correction-grid"><input id="corrInitial" inputmode="decimal" placeholder="Initial load"><input id="corrReloads" inputmode="decimal" placeholder="Total reloads"></div><input id="corrFinal" inputmode="decimal" placeholder="Final cash-out"><input id="corrTierCredits" inputmode="decimal" placeholder="Tier Credits"><input id="corrMakeupShare" inputmode="decimal" placeholder="Makeup share %"><div id="corrSessionHandpays" class="sub"></div><div id="corrSessionSummary" class="sub"></div></div><div id="fpCorrection" hidden><div class="section-kicker spaced">FREE PLAY CORRECTION</div><select id="corrFpCasino"></select><input id="corrFpPlayer" autocomplete="off" placeholder="Name on player card"><div class="correction-grid"><input id="corrFpFace" inputmode="decimal" placeholder="Free-play face value"><input id="corrFpCash" inputmode="decimal" placeholder="Actual cash collected"></div></div><div id="fpCoinInCorrection" hidden><div class="section-kicker spaced">COIN-IN PLAY CORRECTION</div><div id="corrFpCoinInParent" class="sub"></div><input id="corrFpCoinInExtra" inputmode="decimal" placeholder="Extra Coin-In"><input id="corrFpCoinInTier" inputmode="decimal" placeholder="Tier Credits"><input id="corrFpCoinInResult" inputmode="decimal" placeholder="Win / Loss result"><input id="corrFpCoinInNote" autocomplete="off" placeholder="Coin-in note"></div><input id="correctionReason" autocomplete="off" placeholder="Reason / note (optional)"><button class="orange" onclick="saveCorrection()">SAVE CORRECTION</button></section>
   <section class="card compact"><div class="row"><div><div class="section-kicker">BACKUP STATUS</div><div id="backupDetail" class="sub"></div></div><button class="small" onclick="syncNow(true)">SYNC NOW</button></div></section>
+  <section class="card compact"><div class="section-kicker">APP VERSION</div><div class="sub">AP Bankroll v8.7.0</div></section>
   <section class="card compact"><div class="section-kicker">SYNC SECURITY</div><div id="keyDetail" class="sub"></div><input id="syncKeyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Private sync key"><div class="row"><button class="small" onclick="saveSyncKey()">SAVE / CHANGE KEY</button><button class="small" onclick="clearSyncKey()">REMOVE KEY</button></div></section>
 </section>
 </main>
-<nav class="bottom-nav" aria-label="Main navigation"><button id="navHome" class="nav-item active" onclick="showPage('home')"><span class="nav-icon">⌂</span><span>Home</span></button><button id="navSchedule" class="nav-item" onclick="showPage('schedule')"><span class="nav-icon">▦</span><span>Schedule</span></button><button id="navAdd" class="nav-item nav-add" onclick="showPage('add')"><span class="plus">+</span><span>Add Entry</span></button><button id="navReports" class="nav-item" onclick="showPage('reports')"><span class="nav-icon">▥</span><span>Reports</span></button><button id="navMore" class="nav-item" onclick="showPage('more')"><span class="nav-icon">•••</span><span>More</span></button></nav>
-<script src="config.js?v=8.6.1"></script><script src="app.js?v=8.6.1"></script></body></html>
+<nav class="bottom-nav" aria-label="Main navigation"><button id="navHome" class="nav-item active" onclick="showPage('home')"><span class="nav-icon">⌂</span><span>Home</span></button><button id="navSchedule" class="nav-item" onclick="showPage('schedule')"><span class="nav-icon">▦</span><span>Schedule</span></button><button id="navAdd" class="nav-item nav-add" onclick="showPage('add')"><span class="plus" aria-hidden="true"></span><span>Add Entry</span></button><button id="navReports" class="nav-item" onclick="showPage('reports')"><span class="nav-icon">▥</span><span>Reports</span></button><button id="navMore" class="nav-item" onclick="showPage('more')"><span class="nav-icon">•••</span><span>More</span></button></nav>
+<script src="config.js?v=8.6.1"></script><script src="app.js?v=8.7.0"></script></body></html>

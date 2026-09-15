@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.6.9';
+const APP_VERSION='8.7.0';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -166,7 +166,7 @@ async function clearSyncKey(){
   syncKey='';await metaSet('syncKey','');$('syncKeyInput').value='';render();setStatus('Private sync key removed from this iPhone.');
 }
 
-function setStatus(t){$('status').textContent=t}
+function setStatus(t){const el=$('status');if(!el)return;const msg=String(t||'Ready');el.textContent=msg.toUpperCase()==='READY'?'READY':msg;el.title=msg;el.className='badge status-badge '+(/error|failed|rejected|unavailable|invalid/i.test(msg)?'warn':'')}
 function lockActions(ms=650){
   if(actionLocked) return false;
   actionLocked=true;
@@ -562,6 +562,24 @@ function populateCasinos(){
   const list=[...new Set([...(baseline.casinos||[]),...DEFAULT_CASINOS])].filter(Boolean).sort();
   for(const id of ['casinoSelect','fpCasinoSelect','corrSessionCasino','corrFpCasino']){const el=$(id);if(!el)continue;const old=el.value;el.innerHTML='';for(const c of list)el.add(new Option(c,c));if(list.includes(old))el.value=old}
 }
+function dashboardMtdPl(){
+  const now=new Date(),start=new Date(now.getFullYear(),now.getMonth(),1),end=new Date(now.getFullYear(),now.getMonth()+1,1);
+  const inMonth=x=>{const d=dateOf(x?.ts||x?.date||x?.timestamp);return !!d&&d>=start&&d<end};
+  const r=reportData();
+  let total=sum((r.sessions||[]).filter(inMonth),x=>Number(x.net)||0)+sum((r.freePlayCoinIn||[]).filter(inMonth),x=>Number(x.result)||0);
+  for(const e of pending()){
+    if(!inMonth(e)) continue;
+    if(e.type==='cashout') total+=Number(e.payload?.net)||0;
+    else if(e.type==='fp_coinin') total+=Number(e.payload?.result)||0;
+    else if(e.type==='correction'){
+      const b=e.payload?.before||{},a=e.payload?.after||{},t=e.payload?.targetType,id=String(e.payload?.targetId||'');
+      if(t==='session'){const src=(r.sessions||[]).find(x=>String(x.id||x.sessionId||'')===id);if(src&&inMonth(src)&&String(b.status||'')!=='OPEN')total+=(Number(a.net)||0)-(Number(b.net)||0)}
+      else if(t==='fp_coinin'){const src=(r.freePlayCoinIn||[]).find(x=>String(x.id||x.coinInId||'')===id);if(src&&inMonth(src))total+=(Number(a.result)||0)-(Number(b.result)||0)}
+    }
+  }
+  return round2(total);
+}
+
 function render(){
   const v=viewData(),a=localState.active,sched=baseline.schedule||{};
   if($('newSession'))$('newSession').hidden=!!a;if($('activeSession'))$('activeSession').hidden=!a;
@@ -570,11 +588,12 @@ function render(){
   $('homeExpected').textContent=cloudLoaded?moneyDash(v.expected):'—';$('homePhysical').textContent=cloudLoaded?moneyDash(v.physical):'—';$('homeVariance').textContent=cloudLoaded?((v.variance<0?'−':'')+moneyDash(Math.abs(v.variance))):'—';$('homeVariance').className=cloudLoaded?(v.variance===0?'good':'bad'):'';
   $('homeMakeup').textContent=cloudLoaded&&v.makeupOk?((v.makeup<0?'−':'')+moneyDash(Math.abs(v.makeup))):'—';$('homeMakeup').className=cloudLoaded&&v.makeupOk?(v.makeup>=0?'good':'bad'):'';
   $('homeFpPayable').textContent=cloudLoaded?moneyDash(v.fpPayable):'—';$('homeFpCash').textContent=cloudLoaded?moneyDash(v.fpCash):'—';$('homeScheduled').textContent=cloudLoaded&&sched.ok?moneyDash(sched.totalOffers):'—';$('homeScheduledPay').textContent=cloudLoaded&&sched.ok?moneyDash(sched.offerPay):'—';
+  const mtd=dashboardMtdPl();$('homeMtdPl').textContent=cloudLoaded?((mtd<0?'−':'')+moneyDash(Math.abs(mtd))):'—';$('homeMtdPl').className=cloudLoaded?(mtd>=0?'good':'bad'):'';
   $('homeActive').hidden=!a;if(a){$('homeActiveCasino').textContent=a.casino;$('homeActivePlayer').textContent=a.playerName+((Number(a.makeupShare)||100)<100?' · CHOP '+(Number(a.makeupShare)||100)+'%':'');$('homeDeployed').textContent=moneyDash(a.totalDeployed);$('homeReloads').textContent=moneyDash(a.reloads);$('homeHandpays').textContent=moneyDash(Number(a.handpays)||0);$('homeLastReload').textContent=localState.lastReload?new Date(localState.lastReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
   $('fpPayable').textContent=money(v.fpPayable);$('fpPayDetail').textContent=money(v.fpRecordedEarned)+' recorded earned · '+money(v.fpLegacy)+' legacy opening payable · '+money(v.fpPaid)+' paid';$('settleBtn').disabled=actionLocked||!cloudLoaded||v.fpPayable<=0;
   $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'good':'bad');$('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
   const online=navigator.onLine,p=v.pending,badge=$('syncBadge');if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP'}else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}else if(cloudError&&!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC ERROR'}else if(!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC NEEDED'}else{badge.className='badge '+(!online||p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
-  const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';const backup=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required.':!cloudLoaded?(cloudError?`Ledger data unavailable — ${cloudError}.`:'Ledger data unavailable — sync required.'):p?`${p} local entr${p===1?'y':'ies'} awaiting backup · Last sync ${last}`:`All local entries backed up · Last sync ${last}`;$('backupDetail').textContent=backup;$('homeBackup').textContent=backup;$('keyDetail').textContent=syncKey?(cloudLoaded?'Private sync key verified on this device.':'A private sync key is stored, but it has not successfully loaded the ledger yet.'):'No private sync key saved on this device.';
+  const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';const backup=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required.':!cloudLoaded?(cloudError?`Ledger data unavailable — ${cloudError}.`:'Ledger data unavailable — sync required.'):p?`${p} local entr${p===1?'y':'ies'} awaiting backup · Last sync ${last}`:`All local entries backed up · Last sync ${last}`;$('backupDetail').textContent=backup;$('keyDetail').textContent=syncKey?(cloudLoaded?'Private sync key verified on this device.':'A private sync key is stored, but it has not successfully loaded the ledger yet.'):'No private sync key saved on this device.';
   renderCorrectionPicker();renderBankrollMovement();renderFpCollections();if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();
 }
 function esc(v){return String(v??'').replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
