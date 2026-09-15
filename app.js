@@ -795,8 +795,10 @@ function renderSchedule(){
   if(scheduleView==='casino') renderScheduleCasino(d); else if(scheduleView==='calendar') renderScheduleCalendar(d); else renderScheduleDate(d);
 }
 function renderWorkOffer(x){
-  const amt=x.unknown?'IDK':money0(x.amount),detail=[x.time,x.card].filter(Boolean).map(esc).join(' · '),meta=[x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean).join(' · ');
-  return `<div class="offer-row"><div><div class="offer-location">${esc(x.card||'No card')}</div><div class="offer-detail">${detail||'No time/card detail'}${x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount)?` · FP ${esc(x.fpRaw)}`:''}</div>${meta?`<div class="offer-detail">${meta}</div>`:''}</div><div class="offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
+  const amt=x.unknown?'IDK':money0(x.amount);
+  const details=[x.time?esc(x.time):'',x.agent?`Agent ${esc(x.agent)}`:'',x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean);
+  if(x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount))details.push(`FP ${esc(x.fpRaw)}`);
+  return `<div class="work-offer-row"><div class="work-offer-main"><div class="work-offer-name">${esc(x.card||'No card')}</div><div class="work-offer-meta">${details.join(' · ')||'No additional details'}</div></div><div class="work-offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
 }
 function renderSelectedDay(d,date){
   const rows=(d.entries||[]).filter(x=>x.date===date),by=new Map();
