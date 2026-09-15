@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.6.1';
+const APP_VERSION='8.6.2';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -213,10 +213,22 @@ async function finishSession(){
   const handpays=Number(a.handpays)||0;const ev=event('cashout',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:n,totalDeployed:a.totalDeployed,handpays,tierCredits:round2(tierCredits),net:round2(n+handpays-a.totalDeployed)});
   await commitLocal(ev,()=>{localState.active=null;localState.lastReload=null;$('cashOutAmount').value='';$('tierCredits').value=''},'Session closed');
 }
+function populateFpPlayers(){
+  const dl=$('fpPlayerOptions');if(!dl)return;
+  const players=[...new Set((baseline.rustyPlayers||[]).map(x=>String(x||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  dl.innerHTML=players.map(x=>'<option value="'+esc(x)+'"></option>').join('');
+}
+function canonicalFpPlayer(raw){
+  const entered=String(raw||'').trim();if(!entered)return '';
+  const players=(baseline.rustyPlayers||[]).map(x=>String(x||'').trim()).filter(Boolean);
+  return players.find(x=>x.toLowerCase()===entered.toLowerCase())||'';
+}
 async function saveFreePlay(){
-  const casino=$('fpCasinoSelect').value,player=$('fpPlayerName').value.trim();
+  const casino=$('fpCasinoSelect').value,rawPlayer=$('fpPlayerName').value.trim(),player=canonicalFpPlayer(rawPlayer);
   const faceRaw=$('fpFaceValue').value.trim(),cashRaw=$('fpCashOut').value.trim(),face=Number(faceRaw),cash=Number(cashRaw);
-  if(!player){setStatus('Enter the name on the player card.');return}
+  if(!rawPlayer){setStatus('Select the name on the player card.');return}
+  if(!player){setStatus('Player/card name is not recognized. Select a name from the Rusty list.');$('fpPlayerName').focus();return}
+  $('fpPlayerName').value=player;
   if(faceRaw===''||!Number.isFinite(face)||face<=0){setStatus('Enter the free-play face value.');return}
   if(cashRaw===''||!Number.isFinite(cash)||cash<0){setStatus('Enter the actual cash-out.');return}
   const ev=event('freeplay',{casino,playerName:player,faceValue:face,cashOut:cash});
@@ -826,7 +838,7 @@ async function bootstrapRemote(keyOverride=syncKey){
     else localState=defaultState();
     await saveState();
   }
-  populateCasinos();render();return true;
+  populateCasinos();populateFpPlayers();render();return true;
 }
 async function syncNow(manual=false){
   if(syncRunning) return;
@@ -861,7 +873,7 @@ async function syncNow(manual=false){
 }
 
 async function init(){
-  if('serviceWorker'in navigator){try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!sessionStorage.getItem('ap-sw-reloaded')){sessionStorage.setItem('ap-sw-reloaded','1');location.reload()}})}catch(e){}}db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();bootstrapReady=!!baseline.syncAt;localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();setEntryView('session');showPage('home');render();
+  if('serviceWorker'in navigator){try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!sessionStorage.getItem('ap-sw-reloaded')){sessionStorage.setItem('ap-sw-reloaded','1');location.reload()}})}catch(e){}}db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();bootstrapReady=!!baseline.syncAt;localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();populateFpPlayers();setEntryView('session');showPage('home');render();
   if(configured()&&navigator.onLine)await syncNow(false);else if(!endpointConfigured())setStatus('Local mode ready. Configure the Cloudflare Worker URL.');else if(!syncKey)setStatus('Ledger data unavailable — enter and verify the private sync key in More.');else if(!bootstrapReady)setStatus('Ledger data unavailable — sync required.');window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});setInterval(()=>{if(!document.hidden)syncNow(false)},20000)
 }
 init().catch(e=>setStatus('Startup error: '+e.message));
