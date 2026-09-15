@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.6.3';
+const APP_VERSION='8.6.4';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -72,7 +72,7 @@ async function refreshEvents(){eventsCache=await reqP(store('events').getAll());
 async function markSynced(ids){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const id of ids){const ev=await reqP(s.get(id));if(ev){ev.synced=true;ev.syncedAt=Date.now();s.put(ev)}}await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 async function deleteSynced(){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const ev of eventsCache) if(ev.synced) s.delete(ev.id);await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 
-function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,legacyPayable:0,paid:0,payable:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},scheduleData:{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]},reports:{sessions:[],freePlay:[],freePlayCoinIn:[],payments:[],reconciliations:[],corrections:[],adjustments:[],scheduleSnapshots:[]},lastReload:null,recent:[]}}
+function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,legacyPayable:0,paid:0,payable:0},makeup:{ok:false,value:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},scheduleData:{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]},reports:{sessions:[],freePlay:[],freePlayCoinIn:[],payments:[],reconciliations:[],corrections:[],adjustments:[],scheduleSnapshots:[]},lastReload:null,recent:[]}}
 function defaultState(){return {active:null,lastReload:null}}
 function uuid(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}
 function event(type,payload){return {id:uuid(),type,ts:new Date().toISOString(),createdAt:Date.now(),deviceId,payload,synced:false}}
@@ -88,8 +88,10 @@ function viewData(){
   let fpRecordedEarned=Number(baseline.freePlay?.recordedEarned);
   if(!Number.isFinite(fpRecordedEarned)) fpRecordedEarned=round2(fpEarned-fpLegacy);
   let fpPaid=Number(baseline.freePlay?.paid)||0;
+  let makeup=Number(baseline.makeup?.value)||0;
+  let makeupOk=!!baseline.makeup?.ok;
   for(const e of p){
-    if(e.type==='cashout') expected+=Number(e.payload.net)||0;
+    if(e.type==='cashout'){ expected+=Number(e.payload.net)||0; makeup+=Number(e.payload.makeupNet??e.payload.net)||0; }
     if(e.type==='freeplay'){
       const c=Number(e.payload.cashOut)||0; expected+=c; fpCash+=c; fpEarned+=round2(c*.15);
     }
@@ -110,6 +112,7 @@ function viewData(){
       const b=e.payload.before||{},a=e.payload.after||{};
       if(e.payload.targetType==='session' && String(b.status||'')!=='OPEN'){
         expected+=round2((Number(a.net)||0)-(Number(b.net)||0));
+        makeup+=round2((Number(a.makeupNet??a.net)||0)-(Number(b.makeupNet??b.net)||0));
       }
       if(e.payload.targetType==='freeplay'){
         const delta=round2((Number(a.cashOut)||0)-(Number(b.cashOut)||0));
@@ -121,7 +124,7 @@ function viewData(){
     }
   }
   expected=round2(expected); physical=round2(physical);
-  return {expected,physical,variance:round2(physical-expected),fpCash:round2(fpCash),fpRecordedEarned:round2(fpRecordedEarned),fpLegacy:round2(fpLegacy),fpEarned:round2(fpEarned),fpPaid:round2(fpPaid),fpPayable:Math.max(0,round2(fpEarned-fpPaid)),pending:p.length};
+  return {expected,physical,variance:round2(physical-expected),makeup:round2(makeup),makeupOk,fpCash:round2(fpCash),fpRecordedEarned:round2(fpRecordedEarned),fpLegacy:round2(fpLegacy),fpEarned:round2(fpEarned),fpPaid:round2(fpPaid),fpPayable:Math.max(0,round2(fpEarned-fpPaid)),pending:p.length};
 }
 
 async function saveState(){await metaSet('localState',localState)}
@@ -183,13 +186,16 @@ async function commitLocal(ev,stateMutator,msg){
   }catch(err){setStatus('Local save failed: '+err.message)}
 }
 
+function toggleChop(){const on=!!$('chopPlay')?.checked;if($('chopShareWrap'))$('chopShareWrap').hidden=!on;if(!on&&$('chopShare'))$('chopShare').value=''}
 async function startSession(amount){
   const player=$('sessionPlayerName').value.trim(),casino=$('casinoSelect').value;
   if(!player){setStatus('Enter the player / card name.');return}
   if(localState.active){setStatus('A session is already active.');return}
+  const chopped=!!$('chopPlay')?.checked,shareRaw=chopped?$('chopShare').value.trim():100,makeupShare=Number(shareRaw);
+  if(!Number.isFinite(makeupShare)||makeupShare<=0||makeupShare>100){setStatus('Enter your chop share as a percentage greater than 0 and no more than 100.');return}
   const sid='S-'+uuid();
-  const ev=event('session_start',{sessionId:sid,casino,playerName:player,amount});
-  await commitLocal(ev,()=>{localState.active={sessionId:sid,casino,playerName:player,initial:Number(amount),reloads:0,totalDeployed:Number(amount),handpays:0};localState.lastReload=null;$('sessionPlayerName').value=''},'Session started');
+  const ev=event('session_start',{sessionId:sid,casino,playerName:player,amount,makeupShare:round2(makeupShare)});
+  await commitLocal(ev,()=>{localState.active={sessionId:sid,casino,playerName:player,initial:Number(amount),reloads:0,totalDeployed:Number(amount),handpays:0,makeupShare:round2(makeupShare)};localState.lastReload=null;$('sessionPlayerName').value='';if($('chopPlay'))$('chopPlay').checked=false;if($('chopShare'))$('chopShare').value='';toggleChop()},chopped?'Chopped session started · your share '+round2(makeupShare)+'%':'Session started');
 }
 async function addReload(amount){
   const a=localState.active;if(!a){setStatus('No active session.');return}
@@ -210,7 +216,7 @@ async function finishSession(){
   if(raw===''||!Number.isFinite(n)||n<0){setStatus('Enter the final amount.');return}
   const tcRaw=$('tierCredits').value.trim().replace(/,/g,''),tierCredits=tcRaw===''?0:Number(tcRaw);
   if(!Number.isFinite(tierCredits)||tierCredits<0){setStatus('Enter valid Tier Credits or leave it blank.');return}
-  const handpays=Number(a.handpays)||0;const ev=event('cashout',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:n,totalDeployed:a.totalDeployed,handpays,tierCredits:round2(tierCredits),net:round2(n+handpays-a.totalDeployed)});
+  const handpays=Number(a.handpays)||0,net=round2(n+handpays-a.totalDeployed),makeupShare=Number(a.makeupShare)||100,makeupNet=round2(net*makeupShare/100);const ev=event('cashout',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:n,totalDeployed:a.totalDeployed,handpays,tierCredits:round2(tierCredits),net,makeupShare,makeupNet});
   await commitLocal(ev,()=>{localState.active=null;localState.lastReload=null;$('cashOutAmount').value='';$('tierCredits').value=''},'Session closed');
 }
 function fpPlayerList(){
@@ -499,7 +505,7 @@ function loadCorrectionTarget(){
   const x=selectedCorrection();$('sessionCorrection').hidden=!x||x.targetType!=='session';$('fpCorrection').hidden=!x||x.targetType!=='freeplay';$('fpCoinInCorrection').hidden=!x||x.targetType!=='fp_coinin';
   if(!x)return;
   if(x.targetType==='session'){
-    $('corrSessionCasino').value=x.casino;$('corrSessionPlayer').value=x.playerName;$('corrInitial').value=x.initial;$('corrReloads').value=x.reloads;$('corrFinal').value=x.final;$('corrTierCredits').value=Number(x.tierCredits)||0;
+    $('corrSessionCasino').value=x.casino;$('corrSessionPlayer').value=x.playerName;$('corrInitial').value=x.initial;$('corrReloads').value=x.reloads;$('corrFinal').value=x.final;$('corrTierCredits').value=Number(x.tierCredits)||0;$('corrMakeupShare').value=Number(x.makeupShare)||100;
     $('corrSessionHandpays').textContent='Handpays recorded: '+money(Number(x.handpays)||0);
     $('corrFinal').disabled=x.status==='OPEN';$('corrTierCredits').disabled=x.status==='OPEN';$('corrSessionSummary').textContent=x.status==='OPEN'?'Active session · final amount and Tier Credits remain unavailable until session is closed.':'Current P/L '+money(x.net)+' · deployed '+money(x.totalDeployed)+' · Tier Credits '+(Number(x.tierCredits)||0).toLocaleString();
   }else if(x.targetType==='freeplay'){
@@ -515,15 +521,16 @@ async function saveCorrection(){
   const reason=$('correctionReason').value.trim();let after;
   if(x.targetType==='session'){
     const casino=$('corrSessionCasino').value,player=$('corrSessionPlayer').value.trim();
-    const ir=$('corrInitial').value.trim(),rr=$('corrReloads').value.trim(),fr=$('corrFinal').value.trim(),tcr=$('corrTierCredits').value.trim().replace(/,/g,'');
-    const initial=Number(ir),reloads=Number(rr),final=x.status==='OPEN'?0:Number(fr),tierCredits=x.status==='OPEN'?0:(tcr===''?0:Number(tcr));
+    const ir=$('corrInitial').value.trim(),rr=$('corrReloads').value.trim(),fr=$('corrFinal').value.trim(),tcr=$('corrTierCredits').value.trim().replace(/,/g,''),msr=$('corrMakeupShare').value.trim();
+    const initial=Number(ir),reloads=Number(rr),final=x.status==='OPEN'?0:Number(fr),tierCredits=x.status==='OPEN'?0:(tcr===''?0:Number(tcr)),makeupShare=Number(msr);
     if(!player){setStatus('Enter the player / card name.');return}
     if(ir===''||!Number.isFinite(initial)||initial<=0){setStatus('Enter a valid positive initial load.');return}
     if(rr===''||!Number.isFinite(reloads)||reloads<0){setStatus('Enter a valid reload total.');return}
     if(x.status!=='OPEN'&&(fr===''||!Number.isFinite(final)||final<0)){setStatus('Enter a valid final cash-out.');return}
     if(x.status!=='OPEN'&&(!Number.isFinite(tierCredits)||tierCredits<0)){setStatus('Enter valid Tier Credits.');return}
-    const totalDeployed=round2(initial+reloads),handpays=Number(x.handpays)||0,net=x.status==='OPEN'?round2(handpays-totalDeployed):round2(final+handpays-totalDeployed);
-    after={casino,playerName:player,initial,reloads,totalDeployed,handpays,tierCredits:round2(tierCredits),final,net,status:x.status};
+    if(!Number.isFinite(makeupShare)||makeupShare<=0||makeupShare>100){setStatus('Makeup share must be greater than 0% and no more than 100%.');return}
+    const totalDeployed=round2(initial+reloads),handpays=Number(x.handpays)||0,net=x.status==='OPEN'?round2(handpays-totalDeployed):round2(final+handpays-totalDeployed),makeupNet=round2(net*makeupShare/100);
+    after={casino,playerName:player,initial,reloads,totalDeployed,handpays,tierCredits:round2(tierCredits),makeupShare:round2(makeupShare),makeupNet,final,net,status:x.status};
   }else if(x.targetType==='freeplay'){
     const casino=$('corrFpCasino').value,player=$('corrFpPlayer').value.trim();
     const ar=$('corrFpFace').value.trim(),cr=$('corrFpCash').value.trim(),faceValue=Number(ar),cashOut=Number(cr);
@@ -544,7 +551,7 @@ async function saveCorrection(){
   const ev=event('correction',{targetType:x.targetType,targetId:x.targetId,before,after,reason});
   await commitLocal(ev,()=>{
     if(x.targetType==='session'&&localState.active&&String(localState.active.sessionId)===String(x.targetId)){
-      localState.active.casino=after.casino;localState.active.playerName=after.playerName;localState.active.initial=after.initial;localState.active.reloads=after.reloads;localState.active.totalDeployed=after.totalDeployed;
+      localState.active.casino=after.casino;localState.active.playerName=after.playerName;localState.active.initial=after.initial;localState.active.reloads=after.reloads;localState.active.totalDeployed=after.totalDeployed;localState.active.makeupShare=after.makeupShare;
     }
   },'Correction recorded');
 }
@@ -557,11 +564,12 @@ function populateCasinos(){
 function render(){
   const v=viewData(),a=localState.active,sched=baseline.schedule||{};
   if($('newSession'))$('newSession').hidden=!!a;if($('activeSession'))$('activeSession').hidden=!a;
-  if(a){$('activeCasino').textContent=a.casino;$('activePlayer').textContent='Player / Card: '+a.playerName;const handpays=Number(a.handpays)||0,totalDeployed=Number(a.totalDeployed)||0;$('sessionInitial').textContent=money0(Number(a.initial)||0);$('sessionReloads').textContent=money0(Number(a.reloads)||0);$('sessionTotalDeployed').textContent=money0(totalDeployed);$('sessionHandpayTotal').textContent=money0(handpays);const realized=round2(handpays-totalDeployed);$('sessionRealizedPosition').textContent=(realized<0?'−':'')+money(Math.abs(realized));$('sessionRealizedPosition').className='big '+(realized>=0?'good':'bad');const lr=localState.lastReload;$('lastReload').textContent=lr?money(lr.amount).replace('.00','')+' at '+new Date(lr.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None yet';$('sessionHandpays').textContent=money(handpays)}
+  if(a){$('activeCasino').textContent=a.casino;$('activePlayer').textContent='Player / Card: '+a.playerName+((Number(a.makeupShare)||100)<100?' · CHOP '+(Number(a.makeupShare)||100)+'%':'');const handpays=Number(a.handpays)||0,totalDeployed=Number(a.totalDeployed)||0;$('sessionInitial').textContent=money0(Number(a.initial)||0);$('sessionReloads').textContent=money0(Number(a.reloads)||0);$('sessionTotalDeployed').textContent=money0(totalDeployed);$('sessionHandpayTotal').textContent=money0(handpays);const realized=round2(handpays-totalDeployed);$('sessionRealizedPosition').textContent=(realized<0?'−':'')+money(Math.abs(realized));$('sessionRealizedPosition').className='big '+(realized>=0?'good':'bad');const lr=localState.lastReload;$('lastReload').textContent=lr?money(lr.amount).replace('.00','')+' at '+new Date(lr.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None yet';$('sessionHandpays').textContent=money(handpays)}
   const cloudLoaded=bootstrapReady||!!baseline.syncAt;
   $('homeExpected').textContent=cloudLoaded?money(v.expected):'—';$('homePhysical').textContent=cloudLoaded?money(v.physical):'—';$('homeVariance').textContent=cloudLoaded?((v.variance<0?'−':'')+money(Math.abs(v.variance))):'—';$('homeVariance').className=cloudLoaded?(v.variance===0?'good':'bad'):'';
+  $('homeMakeup').textContent=cloudLoaded&&v.makeupOk?((v.makeup<0?'−':'')+money(Math.abs(v.makeup))):'—';$('homeMakeup').className=cloudLoaded&&v.makeupOk?(v.makeup>=0?'good':'bad'):'';
   $('homeFpPayable').textContent=cloudLoaded?money(v.fpPayable):'—';$('homeFpCash').textContent=cloudLoaded?money(v.fpCash):'—';$('homeScheduled').textContent=cloudLoaded&&sched.ok?money0(sched.totalOffers):'—';$('homeScheduledPay').textContent=cloudLoaded&&sched.ok?money(sched.offerPay):'—';
-  $('homeActive').hidden=!a;if(a){$('homeActiveCasino').textContent=a.casino;$('homeActivePlayer').textContent=a.playerName;$('homeDeployed').textContent=money0(a.totalDeployed);$('homeReloads').textContent=money0(a.reloads);$('homeHandpays').textContent=money0(Number(a.handpays)||0);$('homeLastReload').textContent=localState.lastReload?new Date(localState.lastReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
+  $('homeActive').hidden=!a;if(a){$('homeActiveCasino').textContent=a.casino;$('homeActivePlayer').textContent=a.playerName+((Number(a.makeupShare)||100)<100?' · CHOP '+(Number(a.makeupShare)||100)+'%':'');$('homeDeployed').textContent=money0(a.totalDeployed);$('homeReloads').textContent=money0(a.reloads);$('homeHandpays').textContent=money0(Number(a.handpays)||0);$('homeLastReload').textContent=localState.lastReload?new Date(localState.lastReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
   $('fpPayable').textContent=money(v.fpPayable);$('fpPayDetail').textContent=money(v.fpRecordedEarned)+' recorded earned · '+money(v.fpLegacy)+' legacy opening payable · '+money(v.fpPaid)+' paid';$('settleBtn').disabled=actionLocked||!cloudLoaded||v.fpPayable<=0;
   $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'good':'bad');$('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
   const online=navigator.onLine,p=v.pending,badge=$('syncBadge');if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP'}else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}else if(cloudError&&!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC ERROR'}else if(!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC NEEDED'}else{badge.className='badge '+(!online||p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
