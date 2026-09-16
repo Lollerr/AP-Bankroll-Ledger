@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.7.4';
+const APP_VERSION='8.7.5';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -192,11 +192,11 @@ async function startSession(amount){
   const player=$('sessionPlayerName').value.trim(),casino=$('casinoSelect').value;
   if(!player){setStatus('Enter the player / card name.');return}
   if(localState.active){setStatus('A session is already active.');return}
-  const chopped=!!$('chopPlay')?.checked,shareRaw=chopped?$('chopShare').value.trim():100,makeupShare=Number(shareRaw),playDetails=chopped?$('chopPlayDetails').value.trim():'';
+  const chopped=!!$('chopPlay')?.checked,cardRun=!!$('cardRun')?.checked,shareRaw=chopped?$('chopShare').value.trim():100,makeupShare=Number(shareRaw),playDetails=chopped?$('chopPlayDetails').value.trim():'';
   if(!Number.isFinite(makeupShare)||makeupShare<=0||makeupShare>100){setStatus('Enter your chop share as a percentage greater than 0 and no more than 100.');return}
   const sid='S-'+uuid();
-  const ev=event('session_start',{sessionId:sid,casino,playerName:player,amount,makeupShare:round2(makeupShare),playDetails});
-  await commitLocal(ev,()=>{localState.active={sessionId:sid,casino,playerName:player,initial:Number(amount),reloads:0,totalDeployed:Number(amount),handpays:0,makeupShare:round2(makeupShare),playDetails};localState.lastReload=null;$('sessionPlayerName').value='';if($('chopPlay'))$('chopPlay').checked=false;if($('chopShare'))$('chopShare').value='';if($('chopPlayDetails'))$('chopPlayDetails').value='';toggleChop()},chopped?'Chopped session started · your share '+round2(makeupShare)+'%':'Session started');
+  const ev=event('session_start',{sessionId:sid,casino,playerName:player,amount,makeupShare:round2(makeupShare),playDetails,cardRun});
+  await commitLocal(ev,()=>{localState.active={sessionId:sid,casino,playerName:player,initial:Number(amount),reloads:0,totalDeployed:Number(amount),handpays:0,makeupShare:round2(makeupShare),playDetails,cardRun};localState.lastReload=null;$('sessionPlayerName').value='';if($('chopPlay'))$('chopPlay').checked=false;if($('cardRun'))$('cardRun').checked=false;if($('chopShare'))$('chopShare').value='';if($('chopPlayDetails'))$('chopPlayDetails').value='';toggleChop()},chopped?'Chopped session started · your share '+round2(makeupShare)+'%':'Session started');
 }
 async function addReload(amount){
   const a=localState.active;if(!a){setStatus('No active session.');return}
@@ -217,7 +217,7 @@ async function finishSession(){
   if(raw===''||!Number.isFinite(n)||n<0){setStatus('Enter the final amount.');return}
   const tcRaw=$('tierCredits').value.trim().replace(/,/g,''),tierCredits=tcRaw===''?0:Number(tcRaw);
   if(!Number.isFinite(tierCredits)||tierCredits<0){setStatus('Enter valid Tier Credits or leave it blank.');return}
-  const handpays=Number(a.handpays)||0,net=round2(n+handpays-a.totalDeployed),makeupShare=Number(a.makeupShare)||100,makeupNet=round2(net*makeupShare/100);const ev=event('cashout',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:n,totalDeployed:a.totalDeployed,handpays,tierCredits:round2(tierCredits),net,makeupShare,makeupNet});
+  const handpays=Number(a.handpays)||0,net=round2(n+handpays-a.totalDeployed),makeupShare=Number(a.makeupShare)||100,makeupNet=round2(net*makeupShare/100);const ev=event('cashout',{sessionId:a.sessionId,casino:a.casino,playerName:a.playerName,amount:n,totalDeployed:a.totalDeployed,handpays,tierCredits:round2(tierCredits),net,makeupShare,makeupNet,cardRun:!!a.cardRun});
   await commitLocal(ev,()=>{localState.active=null;localState.lastReload=null;$('cashOutAmount').value='';$('tierCredits').value=''},'Session closed');
 }
 function fpPlayerList(){
@@ -506,7 +506,7 @@ function loadCorrectionTarget(){
   const x=selectedCorrection();$('sessionCorrection').hidden=!x||x.targetType!=='session';$('fpCorrection').hidden=!x||x.targetType!=='freeplay';$('fpCoinInCorrection').hidden=!x||x.targetType!=='fp_coinin';
   if(!x)return;
   if(x.targetType==='session'){
-    $('corrSessionCasino').value=x.casino;$('corrSessionPlayer').value=x.playerName;$('corrInitial').value=x.initial;$('corrReloads').value=x.reloads;$('corrFinal').value=x.final;$('corrTierCredits').value=Number(x.tierCredits)||0;$('corrMakeupShare').value=Number(x.makeupShare)||100;$('corrPlayDetails').value=x.playDetails||'';
+    $('corrSessionCasino').value=x.casino;$('corrSessionPlayer').value=x.playerName;$('corrInitial').value=x.initial;$('corrReloads').value=x.reloads;$('corrFinal').value=x.final;$('corrTierCredits').value=Number(x.tierCredits)||0;$('corrMakeupShare').value=Number(x.makeupShare)||100;$('corrPlayDetails').value=x.playDetails||'';$('corrCardRun').checked=!!x.cardRun;
     $('corrSessionHandpays').textContent='Handpays recorded: '+money(Number(x.handpays)||0);
     $('corrFinal').disabled=x.status==='OPEN';$('corrTierCredits').disabled=x.status==='OPEN';$('corrSessionSummary').textContent=x.status==='OPEN'?'Active session · final amount and Tier Credits remain unavailable until session is closed.':'Current P/L '+money(x.net)+' · deployed '+money(x.totalDeployed)+' · Tier Credits '+(Number(x.tierCredits)||0).toLocaleString();
   }else if(x.targetType==='freeplay'){
@@ -522,7 +522,7 @@ async function saveCorrection(){
   const reason=$('correctionReason').value.trim();let after;
   if(x.targetType==='session'){
     const casino=$('corrSessionCasino').value,player=$('corrSessionPlayer').value.trim();
-    const ir=$('corrInitial').value.trim(),rr=$('corrReloads').value.trim(),fr=$('corrFinal').value.trim(),tcr=$('corrTierCredits').value.trim().replace(/,/g,''),msr=$('corrMakeupShare').value.trim(),playDetails=$('corrPlayDetails').value.trim();
+    const ir=$('corrInitial').value.trim(),rr=$('corrReloads').value.trim(),fr=$('corrFinal').value.trim(),tcr=$('corrTierCredits').value.trim().replace(/,/g,''),msr=$('corrMakeupShare').value.trim(),playDetails=$('corrPlayDetails').value.trim(),cardRun=!!$('corrCardRun').checked;
     const initial=Number(ir),reloads=Number(rr),final=x.status==='OPEN'?0:Number(fr),tierCredits=x.status==='OPEN'?0:(tcr===''?0:Number(tcr)),makeupShare=Number(msr);
     if(!player){setStatus('Enter the player / card name.');return}
     if(ir===''||!Number.isFinite(initial)||initial<=0){setStatus('Enter a valid positive initial load.');return}
@@ -531,7 +531,7 @@ async function saveCorrection(){
     if(x.status!=='OPEN'&&(!Number.isFinite(tierCredits)||tierCredits<0)){setStatus('Enter valid Tier Credits.');return}
     if(!Number.isFinite(makeupShare)||makeupShare<=0||makeupShare>100){setStatus('Makeup share must be greater than 0% and no more than 100%.');return}
     const totalDeployed=round2(initial+reloads),handpays=Number(x.handpays)||0,net=x.status==='OPEN'?round2(handpays-totalDeployed):round2(final+handpays-totalDeployed),makeupNet=round2(net*makeupShare/100);
-    after={casino,playerName:player,initial,reloads,totalDeployed,handpays,tierCredits:round2(tierCredits),makeupShare:round2(makeupShare),makeupNet,playDetails,final,net,status:x.status};
+    after={casino,playerName:player,initial,reloads,totalDeployed,handpays,tierCredits:round2(tierCredits),makeupShare:round2(makeupShare),makeupNet,playDetails,cardRun,final,net,status:x.status};
   }else if(x.targetType==='freeplay'){
     const casino=$('corrFpCasino').value,player=$('corrFpPlayer').value.trim();
     const ar=$('corrFpFace').value.trim(),cr=$('corrFpCash').value.trim(),faceValue=Number(ar),cashOut=Number(cr);
@@ -552,7 +552,7 @@ async function saveCorrection(){
   const ev=event('correction',{targetType:x.targetType,targetId:x.targetId,before,after,reason});
   await commitLocal(ev,()=>{
     if(x.targetType==='session'&&localState.active&&String(localState.active.sessionId)===String(x.targetId)){
-      localState.active.casino=after.casino;localState.active.playerName=after.playerName;localState.active.initial=after.initial;localState.active.reloads=after.reloads;localState.active.totalDeployed=after.totalDeployed;localState.active.makeupShare=after.makeupShare;localState.active.playDetails=after.playDetails||'';
+      localState.active.casino=after.casino;localState.active.playerName=after.playerName;localState.active.initial=after.initial;localState.active.reloads=after.reloads;localState.active.totalDeployed=after.totalDeployed;localState.active.makeupShare=after.makeupShare;localState.active.playDetails=after.playDetails||'';localState.active.cardRun=!!after.cardRun;
     }
   },'Correction recorded');
 }
