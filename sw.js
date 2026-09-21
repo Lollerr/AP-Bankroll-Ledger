@@ -6,7 +6,7 @@ self.addEventListener('fetch',e=>{
   if(e.request.method!=='GET') return;
   const u=new URL(e.request.url);
 
-  // v8.7.8: API/cross-origin requests must always go to the network.
+  // v8.7.9: API/cross-origin requests must always go to the network.
   // Never place Cloudflare Worker /bootstrap, /ack, /verify, etc. in the Cache API.
   if(u.origin!==self.location.origin){
     e.respondWith(fetch(e.request,{cache:'no-store'}));

@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.7.8';
+const APP_VERSION='8.7.9';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -621,6 +621,15 @@ function render(){
 function esc(v){return String(v??'').replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
 function money0(n){return '$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0})}
 function moneyDash(n){return '$'+Math.trunc(Number(n)||0).toLocaleString()}
+function toggleSignedInput(id){
+  const el=$(id);if(!el)return;
+  let v=String(el.value||'').trim();
+  if(!v){el.value='-';el.focus();return}
+  el.value=v.startsWith('-')?v.slice(1):('-'+v.replace(/^\+/,''));
+  el.dispatchEvent(new Event('input',{bubbles:true}));
+  el.focus();
+}
+
 
 // Phoenix Link calculator. Constants mirror the denomination-specific models in
 // "Copy of PL updated" -> "Additional PL Data". Bet-range and all-data models
