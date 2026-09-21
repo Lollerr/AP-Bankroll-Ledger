@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.7.9';
+const APP_VERSION='8.8.0';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -74,7 +74,7 @@ async function markSynced(ids){const tx=db.transaction('events','readwrite'),s=t
 async function deleteSynced(){const tx=db.transaction('events','readwrite'),s=tx.objectStore('events');for(const ev of eventsCache) if(ev.synced) s.delete(ev.id);await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});await refreshEvents()}
 
 function defaultBaseline(){return {syncAt:0,casinos:DEFAULT_CASINOS,state:{session:'',casino:'',playerName:''},recon:{expected:0,physical:0,variance:0},freePlay:{cashCollected:0,earned:0,legacyPayable:0,paid:0,payable:0},makeup:{ok:false,value:0},schedule:{ok:false,totalOffers:0,offerPay:0,monthLabel:'',unknownCount:0},scheduleData:{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]},reports:{sessions:[],freePlay:[],freePlayCoinIn:[],payments:[],reconciliations:[],corrections:[],adjustments:[],scheduleSnapshots:[]},lastReload:null,recent:[]}}
-function defaultState(){return {active:null,lastReload:null}}
+function defaultState(){return {active:null,lastReload:null,activeCoinIn:null,lastCoinInReload:null}}
 function uuid(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}
 function event(type,payload){return {id:uuid(),type,ts:new Date().toISOString(),createdAt:Date.now(),deviceId,payload,synced:false}}
 function pending(){return eventsCache.filter(e=>!e.synced)}
@@ -198,6 +198,7 @@ async function startSession(amount){
   const player=$('sessionPlayerName').value.trim(),casino=$('casinoSelect').value;
   if(!player){setStatus('Enter the player / card name.');return}
   if(localState.active){setStatus('A session is already active.');return}
+  if(localState.activeCoinIn){setStatus('A coin-in play is already active. Finish or abandon it first.');return}
   const chopped=!!$('chopPlay')?.checked,cardRun=!!$('cardRun')?.checked,shareRaw=chopped?$('chopShare').value.trim():100,makeupShare=Number(shareRaw),playDetails=chopped?$('chopPlayDetails').value.trim():'';
   if(!Number.isFinite(makeupShare)||makeupShare<=0||makeupShare>100){setStatus('Enter your chop share as a percentage greater than 0 and no more than 100.');return}
   const sid='S-'+uuid();
@@ -303,28 +304,52 @@ function renderFpCollections(){
   list.innerHTML=rows.map(x=>`<div class="audit-item"><b>${esc(x.playerName)}</b> · ${esc(x.casino)}<div class="sub">${esc((x.ts||'').slice(0,10))} · Free Play ${money0(x.faceValue)} → ${money0(x.cashOut)} · Extra Coin-In ${Number(x.extraCoinIn||0).toLocaleString()} · Coin-In P/L <span class="${Number(x.coinInResult)>=0?'good':'bad'}">${money(x.coinInResult)}</span>${Number(x.coinInCount)?` · ${x.coinInCount} play${Number(x.coinInCount)===1?'':'s'}`:''}</div><button class="small" onclick="openFpCoinIn('${x.id}')">ADD COIN-IN PLAY</button></div>`).join('');
 }
 function openFpCoinIn(id){
+  if(localState.activeCoinIn){openActiveFpCoinIn();setStatus('A coin-in play is already active. Finish or abandon it before starting another.');return}
+  if(localState.active){setStatus('A normal play session is active. Close it before starting a coin-in play.');return}
   const x=freePlayCollections().find(v=>String(v.id)===String(id));if(!x){setStatus('Free play collection not found.');return}
   selectedFpCollectionId=String(id);
-  $('fpCoinInCard').hidden=false;
+  $('fpCoinInCard').hidden=false;$('fpCoinInActiveCard').hidden=true;
   $('fpCoinInParent').textContent=x.playerName;
   $('fpCoinInParentDetail').textContent=`${x.casino} · Free Play ${money0(x.faceValue)} → ${money0(x.cashOut)} · Current coin-in P/L ${money(x.coinInResult)}`;
-  $('fpExtraCoinIn').value='';$('fpCoinInTierCredits').value='';$('fpCoinInResult').value='';$('fpCoinInNote').value='';
-  $('fpCoinInResult').focus();
+  $('fpCoinInInitial').value='';$('fpCoinInStartNote').value='';
+  $('fpCoinInInitial').focus();
 }
-function cancelFpCoinIn(){
-  selectedFpCollectionId='';$('fpCoinInCard').hidden=true;
+function cancelFpCoinIn(){selectedFpCollectionId='';$('fpCoinInCard').hidden=true}
+async function startFpCoinInTracker(){
+  const x=freePlayCollections().find(v=>String(v.id)===String(selectedFpCollectionId));if(!x){setStatus('Select a free play collection first.');return}
+  if(localState.active||localState.activeCoinIn){setStatus('Another play is already active.');return}
+  const raw=$('fpCoinInInitial').value.trim().replace(/,/g,''),initial=Number(raw),note=$('fpCoinInStartNote').value.trim();
+  if(raw===''||!Number.isFinite(initial)||initial<=0){setStatus('Enter the initial cash inserted.');return}
+  localState.activeCoinIn={trackerId:'CI-'+uuid(),conversionId:x.id,casino:x.casino,playerName:x.playerName,initial:round2(initial),reloads:0,totalDeployed:round2(initial),handpays:0,note,startedAt:new Date().toISOString()};
+  localState.lastCoinInReload=null;selectedFpCollectionId='';$('fpCoinInCard').hidden=true;$('fpCoinInInitial').value='';$('fpCoinInStartNote').value='';await saveState();render();setStatus('Coin-in play started · tracker saved on this device');
 }
-async function saveFpCoinIn(){
-  const x=freePlayCollections().find(v=>String(v.id)===String(selectedFpCollectionId));
-  if(!x){setStatus('Select a free play collection first.');return}
-  const extraRaw=$('fpExtraCoinIn').value.trim().replace(/,/g,''),tierRaw=$('fpCoinInTierCredits').value.trim().replace(/,/g,''),resultRaw=$('fpCoinInResult').value.trim().replace(/,/g,'');
-  const extra=extraRaw===''?0:Number(extraRaw),tier=tierRaw===''?0:Number(tierRaw),result=Number(resultRaw),note=$('fpCoinInNote').value.trim();
-  if(!Number.isFinite(extra)||extra<0){setStatus('Extra Coin-In must be zero or more.');return}
-  if(!Number.isFinite(tier)||tier<0){setStatus('Tier Credits must be zero or more.');return}
-  if(resultRaw===''||!Number.isFinite(result)){setStatus('Enter the win / loss result. Use 0 for a break-even play.');return}
-  const ev=event('fp_coinin',{conversionId:x.id,casino:x.casino,playerName:x.playerName,extraCoinIn:round2(extra),tierCredits:round2(tier),result:round2(result),note});
-  await commitLocal(ev,()=>{selectedFpCollectionId='';$('fpCoinInCard').hidden=true;$('fpExtraCoinIn').value='';$('fpCoinInTierCredits').value='';$('fpCoinInResult').value='';$('fpCoinInNote').value=''},'Coin-in play added to free play collection');
+async function addFpCoinInReload(amount){
+  const a=localState.activeCoinIn;if(!a){setStatus('No active coin-in play.');return}
+  amount=Number(amount);if(!Number.isFinite(amount)||amount<=0){setStatus('Enter a valid reload amount.');return}
+  a.reloads=round2((Number(a.reloads)||0)+amount);a.totalDeployed=round2((Number(a.initial)||0)+a.reloads);localState.lastCoinInReload={amount:round2(amount),ts:new Date().toISOString()};await saveState();render();setStatus('Coin-in reload recorded');
 }
+async function addCustomFpCoinInReload(){const raw=$('fpCoinInCustomReload').value.trim().replace(/,/g,''),amount=Number(raw);if(raw===''||!Number.isFinite(amount)||amount<=0){setStatus('Enter a valid reload amount.');return}await addFpCoinInReload(amount);$('fpCoinInCustomReload').value=''}
+async function addFpCoinInHandpay(){
+  const a=localState.activeCoinIn;if(!a){setStatus('No active coin-in play.');return}
+  const raw=$('fpCoinInHandpayAmount').value.trim().replace(/,/g,''),amount=Number(raw);if(raw===''||!Number.isFinite(amount)||amount<=0){setStatus('Enter the cash handpay amount.');return}
+  a.handpays=round2((Number(a.handpays)||0)+amount);$('fpCoinInHandpayAmount').value='';await saveState();render();setStatus('Coin-in handpay recorded');
+}
+function updateFpCoinInCalculated(){
+  const a=localState.activeCoinIn,el=$('fpCoinInCalculatedResult');if(!a||!el)return;
+  const raw=$('fpCoinInFinalCash')?.value.trim().replace(/,/g,'')||'',final=Number(raw);if(raw===''||!Number.isFinite(final)||final<0){el.textContent='—';el.className='big';return}
+  const result=round2(final+(Number(a.handpays)||0)-(Number(a.totalDeployed)||0));el.textContent=(result<0?'−':'')+money(Math.abs(result));el.className='big '+(result>=0?'good':'bad');
+}
+async function finishFpCoinInTracker(){
+  const a=localState.activeCoinIn;if(!a){setStatus('No active coin-in play.');return}
+  const finalRaw=$('fpCoinInFinalCash').value.trim().replace(/,/g,''),final=Number(finalRaw),extraRaw=$('fpExtraCoinIn').value.trim().replace(/,/g,''),tierRaw=$('fpCoinInTierCredits').value.trim().replace(/,/g,'');
+  const extra=extraRaw===''?0:Number(extraRaw),tier=tierRaw===''?0:Number(tierRaw);if(finalRaw===''||!Number.isFinite(final)||final<0){setStatus('Enter the final cash / TITO amount.');return}if(!Number.isFinite(extra)||extra<0){setStatus('Extra Coin-In must be zero or more.');return}if(!Number.isFinite(tier)||tier<0){setStatus('Tier Credits must be zero or more.');return}
+  const result=round2(final+(Number(a.handpays)||0)-(Number(a.totalDeployed)||0)),note=$('fpCoinInNote').value.trim()||a.note||'';
+  const ev=event('fp_coinin',{conversionId:a.conversionId,casino:a.casino,playerName:a.playerName,extraCoinIn:round2(extra),tierCredits:round2(tier),result,note});
+  await commitLocal(ev,()=>{localState.activeCoinIn=null;localState.lastCoinInReload=null;for(const id of ['fpCoinInFinalCash','fpExtraCoinIn','fpCoinInTierCredits','fpCoinInNote','fpCoinInCustomReload','fpCoinInHandpayAmount'])if($(id))$(id).value='';$('fpCoinInActiveCard').hidden=true},'Coin-in play closed · '+(result<0?'−':'')+money(Math.abs(result))+' P/L recorded');
+}
+async function abandonFpCoinInTracker(){if(!localState.activeCoinIn)return;if(!confirm('Abandon this coin-in tracker? No win/loss result will be added to the ledger.'))return;localState.activeCoinIn=null;localState.lastCoinInReload=null;await saveState();render();setStatus('Coin-in tracker abandoned')}
+function openActiveFpCoinIn(){if(!localState.activeCoinIn){setStatus('No active coin-in play.');return}showPage('add');setEntryView('freeplay');$('fpCoinInCard').hidden=true;$('fpCoinInActiveCard').hidden=false;setTimeout(()=>$('fpCoinInFinalCash')?.scrollIntoView({behavior:'smooth',block:'center'}),50)}
+
 async function settleFreePlay(){
   const v=viewData(),due=v.fpPayable;
   if(due<=0){setStatus('There is no free play payment balance due.');return}
@@ -612,6 +637,8 @@ function render(){
   $('homeFpPayable').textContent=cloudLoaded?moneyDash(v.fpPayable):'—';$('homeFpCash').textContent=cloudLoaded?moneyDash(v.fpCash):'—';$('homeScheduled').textContent=cloudLoaded&&sched.ok?moneyDash(sched.totalOffers):'—';$('homeScheduledPay').textContent=cloudLoaded&&sched.ok?moneyDash(sched.offerPay):'—';
   const mtd=dashboardMtdPl();$('homeMtdPl').textContent=cloudLoaded?((mtd<0?'−':'')+moneyDash(Math.abs(mtd))):'—';$('homeMtdPl').className=cloudLoaded?(mtd>=0?'good':'bad'):'';
   $('homeActive').hidden=!a;if(a){$('homeActiveCasino').textContent=a.casino;$('homeActivePlayer').textContent=a.playerName+((Number(a.makeupShare)||100)<100?' · CHOP '+(Number(a.makeupShare)||100)+'%':'');$('homeDeployed').textContent=moneyDash(a.totalDeployed);$('homeReloads').textContent=moneyDash(a.reloads);$('homeHandpays').textContent=moneyDash(Number(a.handpays)||0);$('homeLastReload').textContent=localState.lastReload?new Date(localState.lastReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
+  const ci=localState.activeCoinIn;$('homeActiveCoinIn').hidden=!ci;if(ci){$('homeCoinInCasino').textContent=ci.casino;$('homeCoinInPlayer').textContent=ci.playerName;$('homeCoinInDeployed').textContent=moneyDash(ci.totalDeployed);$('homeCoinInReloads').textContent=moneyDash(ci.reloads);$('homeCoinInHandpays').textContent=moneyDash(Number(ci.handpays)||0);$('homeCoinInLastReload').textContent=localState.lastCoinInReload?new Date(localState.lastCoinInReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None'}
+  if($('fpCoinInActiveCard'))$('fpCoinInActiveCard').hidden=!ci;if(ci){$('fpCoinInActiveParent').textContent=ci.playerName;$('fpCoinInActiveDetail').textContent=ci.casino+' · '+new Date(ci.startedAt).toLocaleString();$('fpCoinInInitialStat').textContent=money0(ci.initial);$('fpCoinInReloadStat').textContent=money0(ci.reloads);$('fpCoinInTotalStat').textContent=money0(ci.totalDeployed);$('fpCoinInHandpayStat').textContent=money0(Number(ci.handpays)||0);$('fpCoinInLastReload').textContent=localState.lastCoinInReload?money0(localState.lastCoinInReload.amount)+' at '+new Date(localState.lastCoinInReload.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'None yet';updateFpCoinInCalculated()}
   $('fpPayable').textContent=money(v.fpPayable);$('fpPayDetail').textContent=money(v.fpRecordedEarned)+' recorded earned · '+money(v.fpLegacy)+' legacy opening payable · '+money(v.fpPaid)+' paid';$('settleBtn').disabled=actionLocked||!cloudLoaded||v.fpPayable<=0;
   $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'good':'bad');$('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
   const online=navigator.onLine,p=v.pending,badge=$('syncBadge');if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP'}else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}else if(cloudError&&!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC ERROR'}else if(!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC NEEDED'}else{badge.className='badge '+(!online||p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
@@ -961,7 +988,7 @@ async function syncNow(manual=false){
 }
 
 async function init(){
-  if('serviceWorker'in navigator){try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!sessionStorage.getItem('ap-sw-reloaded')){sessionStorage.setItem('ap-sw-reloaded','1');location.reload()}})}catch(e){}}db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();bootstrapReady=!!baseline.syncAt;localState=await metaGet('localState')||defaultState();await refreshEvents();populateCasinos();populateFpPlayers();setEntryView('session');render();
+  if('serviceWorker'in navigator){try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!sessionStorage.getItem('ap-sw-reloaded')){sessionStorage.setItem('ap-sw-reloaded','1');location.reload()}})}catch(e){}}db=await openDB();deviceId=await metaGet('deviceId');if(!deviceId){deviceId=uuid();await metaSet('deviceId',deviceId)}syncKey=await metaGet('syncKey')||'';baseline=await metaGet('baseline')||defaultBaseline();bootstrapReady=!!baseline.syncAt;localState=await metaGet('localState')||defaultState();if(!('activeCoinIn' in localState))localState.activeCoinIn=null;if(!('lastCoinInReload' in localState))localState.lastCoinInReload=null;await refreshEvents();populateCasinos();populateFpPlayers();setEntryView('session');render();
   if(configured()&&navigator.onLine)await syncNow(false);else if(!endpointConfigured())setStatus('Local mode ready. Configure the Cloudflare Worker URL.');else if(!syncKey)setStatus('Ledger data unavailable — enter and verify the private sync key in More.');else if(!bootstrapReady)setStatus('Ledger data unavailable — sync required.');window.addEventListener('online',()=>syncNow(false));window.addEventListener('offline',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNow(false)});setInterval(()=>{if(!document.hidden)syncNow(false)},20000)
 }
 init().catch(e=>setStatus('Startup error: '+e.message));
