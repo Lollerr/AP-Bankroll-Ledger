@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.7.5';
+const APP_VERSION='8.7.8';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -78,7 +78,6 @@ function defaultState(){return {active:null,lastReload:null}}
 function uuid(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}
 function event(type,payload){return {id:uuid(),type,ts:new Date().toISOString(),createdAt:Date.now(),deviceId,payload,synced:false}}
 function pending(){return eventsCache.filter(e=>!e.synced)}
-
 function viewData(){
   const p=pending();
   let expected=Number(baseline.recon?.expected)||0;
@@ -106,7 +105,9 @@ function viewData(){
     }
     if(e.type==='bankroll_adjustment'){
       const amt=Number(e.payload.amount)||0;
-      expected+=e.payload.kind==='capital_added'?amt:-amt;
+      const impact=e.payload.kind==='capital_added'?amt:-amt;
+      expected+=impact;
+      if(e.payload.physicalMoved) physical+=impact;
     }
     if(e.type==='reconcile') physical=Number(e.payload.counted)||0;
     if(e.type==='correction'){
@@ -121,6 +122,11 @@ function viewData(){
       }
       if(e.payload.targetType==='fp_coinin'){
         expected+=round2((Number(a.result)||0)-(Number(b.result)||0));
+      }
+      if(e.payload.targetType==='adjustment'){
+        const delta=round2((Number(a.impact)||0)-(Number(b.impact)||0));
+        expected+=delta;
+        if(b.physicalApplied) physical+=delta;
       }
     }
   }
@@ -348,18 +354,16 @@ function renderBankrollMovement(){
     const raw=amountEl.value.trim().replace(/,/g,'');
     const amt=Number(raw),kind=type.value;
     if(raw!==''&&Number.isFinite(amt)&&amt>0){
-      const after=round2(v.expected+bankrollAdjustmentImpact(kind,amt));
-      preview.textContent=`Current expected ${money(v.expected)} · After movement ${money(after)}`;
+      const impact=bankrollAdjustmentImpact(kind,amt),after=round2(v.expected+impact),physicalAfter=round2(v.physical+impact);
+      preview.textContent=`Current expected ${money(v.expected)} · After movement ${money(after)} · Variance preserved at ${money(round2(physicalAfter-after))}`;
     }else preview.textContent=`Current expected ${money(v.expected)}`;
   }
-  const targetEl=$('backerTargetBalance'),detail=$('backerTargetDetail');
-  if(targetEl&&detail){
-    const raw=targetEl.value.trim().replace(/,/g,''),target=Number(raw);
-    if(raw!==''&&Number.isFinite(target)&&target>=0){
-      const give=round2(v.expected-target);
-      detail.textContent=give>0?`Current expected ${money(v.expected)} · Return ${money(give)} · Keep ${money(target)}`:
-        give===0?`Current expected already equals ${money(target)}.`:
-        `Target is ${money(Math.abs(give))} above current expected bankroll.`;
+  const amount=$('backerReturnAmount'),detail=$('backerReturnDetail');
+  if(amount&&detail){
+    const raw=amount.value.trim().replace(/,/g,''),amt=Number(raw);
+    if(raw!==''&&Number.isFinite(amt)&&amt>0){
+      const after=round2(v.expected-amt),physicalAfter=round2(v.physical-amt);
+      detail.textContent=after>=0?`Return ${money(amt)} · Expected ${money(v.expected)} → ${money(after)} · Current variance preserved at ${money(round2(physicalAfter-after))}`:`Return exceeds current expected bankroll.`;
     }else detail.textContent=`Current expected ${money(v.expected)}`;
   }
 }
@@ -372,18 +376,17 @@ async function saveBankrollAdjustment(){
   if(after<0){setStatus('This withdrawal would reduce expected bankroll below $0.');return}
   const label=bankrollAdjustmentLabel(kind);
   if(!confirm(`${label}: ${money(amount)}? Expected bankroll will change from ${money(v.expected)} to ${money(after)}.`)) return;
-  const ev=event('bankroll_adjustment',{kind,amount:round2(amount),note});
+  const ev=event('bankroll_adjustment',{kind,amount:round2(amount),note,physicalMoved:true});
   await commitLocal(ev,()=>{$('bankrollAdjustmentAmount').value='';$('bankrollAdjustmentNote').value=''},`${label} recorded · reconcile after the physical cash movement`);
 }
-async function returnExcessToBacker(){
-  const raw=$('backerTargetBalance').value.trim().replace(/,/g,''),target=Number(raw),v=viewData();
-  if(raw===''||!Number.isFinite(target)||target<0){setStatus('Enter a valid target bankroll.');return}
-  const amount=round2(v.expected-target);
-  if(amount<0){setStatus('Target bankroll is higher than current expected bankroll. Use Capital added instead.');return}
-  if(amount===0){setStatus('Expected bankroll already equals the target.');return}
-  if(!confirm(`Return ${money(amount)} to your backer and keep ${money(target)} in the operating bankroll?`)) return;
-  const ev=event('bankroll_adjustment',{kind:'backer_distribution',amount,target:round2(target),note:`Distribution to target bankroll ${money(target)}`});
-  await commitLocal(ev,null,`Backer distribution recorded · expected bankroll is now ${money(target)}; reconcile after handing over the cash`);
+async function returnCashToBacker(){
+  const raw=$('backerReturnAmount').value.trim().replace(/,/g,''),amount=Number(raw),v=viewData();
+  if(raw===''||!Number.isFinite(amount)||amount<=0){setStatus('Enter the actual cash amount returned to the backer.');return}
+  if(amount>v.expected+0.011){setStatus('Cash return exceeds the current expected bankroll.');return}
+  const after=round2(v.expected-amount);
+  if(!confirm(`Record ${money(amount)} physically returned to your backer? Expected bankroll will become ${money(after)} and the current variance will be preserved.`)) return;
+  const ev=event('bankroll_adjustment',{kind:'backer_distribution',amount:round2(amount),note:`Cash physically returned to backer`,physicalMoved:true});
+  await commitLocal(ev,()=>{$('backerReturnAmount').value=''},`Backer cash return recorded · ${money(amount)} removed from operating bankroll`);
 }
 async function reconcileNow(){
   const raw=$('physicalCount').value.trim();if(raw===''){setStatus('Enter the physical bankroll count.');return}
@@ -426,6 +429,11 @@ function recentEntries(){
       extraCoinIn:Number(x.extraCoinIn)||0,tierCredits:Number(x.tierCredits)||0,result:Number(x.result)||0,note:x.note||''
     });
   }
+  for(const x of (reports.adjustments||[])){
+    const id=String(x.id||'');
+    if(!id) continue;
+    map.set('adjustment|'+id,{targetType:'adjustment',targetId:id,ts:x.ts||'',type:x.type||'',amount:Number(x.amount)||0,impact:Number(x.impact)||0,target:x.target??'',note:x.note||'',physicalApplied:!!x.physicalApplied});
+  }
 
   // Merge the server's small recent payload without degrading a closed
   // session's precise cash-out timestamp from report history. Older builds
@@ -455,6 +463,9 @@ function recentEntries(){
       map.set('freeplay|'+e.id,{targetType:'freeplay',targetId:e.id,ts:e.ts,casino:p.casino,playerName:p.playerName,faceValue:Number(p.faceValue)||0,cashOut:Number(p.cashOut)||0});
     }else if(e.type==='fp_coinin'){
       map.set('fp_coinin|'+e.id,{targetType:'fp_coinin',targetId:e.id,ts:e.ts,conversionId:String(p.conversionId||''),casino:p.casino||'',playerName:p.playerName||'',extraCoinIn:Number(p.extraCoinIn)||0,tierCredits:Number(p.tierCredits)||0,result:Number(p.result)||0,note:p.note||''});
+    }else if(e.type==='bankroll_adjustment'){
+      const impact=bankrollAdjustmentImpact(p.kind,Number(p.amount)||0);
+      map.set('adjustment|'+e.id,{targetType:'adjustment',targetId:e.id,ts:e.ts,type:bankrollAdjustmentLabel(p.kind),amount:Number(p.amount)||0,impact,target:p.target??'',note:p.note||'',physicalApplied:!!p.physicalMoved});
     }else if(e.type==='correction'){
       const k=p.targetType+'|'+p.targetId,x=map.get(k);if(x){Object.assign(x,p.after||{});x.ts=e.ts;}
     }
@@ -465,6 +476,7 @@ function correctionLabel(x){
   const d=x.ts?new Date(x.ts).toLocaleDateString([], {month:'numeric',day:'numeric'}):'';
   if(x.targetType==='session') return `${d} · PLAY · ${x.casino} · ${x.playerName} · ${x.status==='OPEN'?'OPEN':money(x.net)+' P/L'}`;
   if(x.targetType==='fp_coinin') return `${d} · COIN-IN · ${x.casino} · ${x.playerName} · ${money(x.result)}`;
+  if(x.targetType==='adjustment') return `${d} · BANKROLL · ${x.type} · ${money(x.amount)}`;
   return `${d} · Free Play · ${x.casino} · ${x.playerName} · ${money(x.cashOut)}`;
 }
 function renderCorrectionPicker(){
@@ -472,10 +484,11 @@ function renderCorrectionPicker(){
   const sessionCount=items.filter(x=>x.targetType==='session').length;
   const fpCount=items.filter(x=>x.targetType==='freeplay').length;
   const coinCount=items.filter(x=>x.targetType==='fp_coinin').length;
+  const adjustmentCount=items.filter(x=>x.targetType==='adjustment').length;
   const detail=$('correctionSourceDetail');
-  if(detail) detail.textContent=`${items.length} correctable entries loaded · ${sessionCount} sessions · ${fpCount} free play · ${coinCount} coin-in plays`;
+  if(detail) detail.textContent=`${items.length} correctable entries loaded · ${sessionCount} sessions · ${fpCount} free play · ${coinCount} coin-in · ${adjustmentCount} bankroll movements`;
   sel.innerHTML='';
-  if(!items.length){sel.add(new Option('No recent entries available',''));$('correctionEmpty').hidden=false;$('sessionCorrection').hidden=true;$('fpCorrection').hidden=true;$('fpCoinInCorrection').hidden=true;return}
+  if(!items.length){sel.add(new Option('No recent entries available',''));$('correctionEmpty').hidden=false;$('sessionCorrection').hidden=true;$('fpCorrection').hidden=true;$('fpCoinInCorrection').hidden=true;$('adjustmentCorrection').hidden=true;return}
   $('correctionEmpty').hidden=true;
   sel.add(new Option('Select an entry to correct…',''));
   for(const x of items) sel.add(new Option(correctionLabel(x),x.targetType+'|'+x.targetId));
@@ -503,7 +516,7 @@ function selectedCorrection(){
   return recentEntries().find(x=>x.targetType===type&&String(x.targetId)===id)||null;
 }
 function loadCorrectionTarget(){
-  const x=selectedCorrection();$('sessionCorrection').hidden=!x||x.targetType!=='session';$('fpCorrection').hidden=!x||x.targetType!=='freeplay';$('fpCoinInCorrection').hidden=!x||x.targetType!=='fp_coinin';
+  const x=selectedCorrection();$('sessionCorrection').hidden=!x||x.targetType!=='session';$('fpCorrection').hidden=!x||x.targetType!=='freeplay';$('fpCoinInCorrection').hidden=!x||x.targetType!=='fp_coinin';$('adjustmentCorrection').hidden=!x||x.targetType!=='adjustment';
   if(!x)return;
   if(x.targetType==='session'){
     $('corrSessionCasino').value=x.casino;$('corrSessionPlayer').value=x.playerName;$('corrInitial').value=x.initial;$('corrReloads').value=x.reloads;$('corrFinal').value=x.final;$('corrTierCredits').value=Number(x.tierCredits)||0;$('corrMakeupShare').value=Number(x.makeupShare)||100;$('corrPlayDetails').value=x.playDetails||'';$('corrCardRun').checked=!!x.cardRun;
@@ -511,9 +524,12 @@ function loadCorrectionTarget(){
     $('corrFinal').disabled=x.status==='OPEN';$('corrTierCredits').disabled=x.status==='OPEN';$('corrSessionSummary').textContent=x.status==='OPEN'?'Active session · final amount and Tier Credits remain unavailable until session is closed.':'Current P/L '+money(x.net)+' · deployed '+money(x.totalDeployed)+' · Tier Credits '+(Number(x.tierCredits)||0).toLocaleString();
   }else if(x.targetType==='freeplay'){
     $('corrFpCasino').value=x.casino;$('corrFpPlayer').value=x.playerName;$('corrFpFace').value=x.faceValue;$('corrFpCash').value=x.cashOut;
-  }else{
+  }else if(x.targetType==='fp_coinin'){
     $('corrFpCoinInParent').textContent=`${x.playerName} · ${x.casino}`;
     $('corrFpCoinInExtra').value=Number(x.extraCoinIn)||0;$('corrFpCoinInTier').value=Number(x.tierCredits)||0;$('corrFpCoinInResult').value=Number(x.result)||0;$('corrFpCoinInNote').value=x.note||'';
+  }else{
+    $('corrAdjustmentType').textContent=x.type||'Bankroll movement';$('corrAdjustmentAmount').value=Number(x.amount)||0;$('corrAdjustmentNote').value=x.note||'';
+    $('corrAdjustmentPhysical').textContent=x.physicalApplied?'This movement already adjusted the physical bankroll baseline; amount corrections preserve variance.':'Legacy movement: correcting the ledger amount will not alter the physical-count baseline. Reconcile after saving if needed.';
   }
   $('correctionReason').value='';
 }
@@ -539,13 +555,19 @@ async function saveCorrection(){
     if(ar===''||!Number.isFinite(faceValue)||faceValue<=0){setStatus('Enter a valid free play face value.');return}
     if(cr===''||!Number.isFinite(cashOut)||cashOut<0){setStatus('Enter a valid actual cash amount.');return}
     after={casino,playerName:player,faceValue,cashOut};
-  }else{
+  }else if(x.targetType==='fp_coinin'){
     const er=$('corrFpCoinInExtra').value.trim().replace(/,/g,''),tr=$('corrFpCoinInTier').value.trim().replace(/,/g,''),rr=$('corrFpCoinInResult').value.trim().replace(/,/g,'');
     const extraCoinIn=er===''?0:Number(er),tierCredits=tr===''?0:Number(tr),result=Number(rr),note=$('corrFpCoinInNote').value.trim();
     if(!Number.isFinite(extraCoinIn)||extraCoinIn<0){setStatus('Enter valid Extra Coin-In.');return}
     if(!Number.isFinite(tierCredits)||tierCredits<0){setStatus('Enter valid Tier Credits.');return}
     if(rr===''||!Number.isFinite(result)){setStatus('Enter a valid coin-in result.');return}
     after={conversionId:x.conversionId,casino:x.casino,playerName:x.playerName,extraCoinIn:round2(extraCoinIn),tierCredits:round2(tierCredits),result:round2(result),note};
+  }else{
+    const raw=$('corrAdjustmentAmount').value.trim().replace(/,/g,''),amount=Number(raw),note=$('corrAdjustmentNote').value.trim();
+    if(raw===''||!Number.isFinite(amount)||amount<=0){setStatus('Enter the actual positive cash movement amount.');return}
+    const kind=x.type==='Capital Added'?'capital_added':x.type==='Other Withdrawal'?'other_withdrawal':'backer_distribution';
+    const impact=bankrollAdjustmentImpact(kind,amount);
+    after={type:x.type,kind,amount:round2(amount),impact,target:x.target??'',note,physicalApplied:!!x.physicalApplied};
   }
   const before={...x};delete before.targetType;delete before.targetId;delete before.ts;
   const changed=Object.keys(after).some(k=>String(after[k])!==String(before[k]));if(!changed){setStatus('Nothing changed.');return}
