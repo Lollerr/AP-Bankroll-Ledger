@@ -13,7 +13,7 @@
 @media (max-width:420px){.calculator-choice{min-height:80px;padding:14px 15px}.calculator-choice .calc-name{font-size:15px}.calculator-choice .calc-desc{font-size:11px}}
 .session-flags{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
 
-/* v8.8.0 signed numeric input control */
+/* v8.8.1 signed numeric input control */
 .signed-input-row{display:grid;grid-template-columns:minmax(0,1fr) 52px;gap:8px;align-items:stretch}
 .signed-input-row input{margin:0}
 .signed-input-toggle{margin:0;min-height:44px;padding:0;font-size:22px;font-weight:800;line-height:1;border-radius:10px}
@@ -90,6 +90,14 @@
   .home-metric-grid .metric{min-height:45px}
   #pageHome #homeActive .mini-stats{margin-top:5px}
 }
+</style>
+
+<style>
+.work-offer-row{grid-template-columns:auto minmax(0,1fr) auto}
+.schedule-check{width:32px;height:32px;min-height:32px;padding:0;margin:0;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;background:#111827;border:1px solid #526173;color:#9fb0c4}
+.schedule-check.done{background:#173c2d;border-color:#2f8f68;color:#d9ffed}
+.work-offer-row.completed{opacity:.58}.work-offer-row.completed .work-offer-name{text-decoration:line-through;text-decoration-thickness:1px}
+@media(max-width:390px){.schedule-check{width:29px;height:29px;min-height:29px;font-size:16px}}
 </style>
 </head>
 <body><main>
@@ -206,9 +214,9 @@
   </section>
   <section class="card"><div class="section-kicker">CORRECT AN ENTRY</div><div class="sub">Corrections preserve the audit trail.</div><select id="correctionTarget" onchange="loadCorrectionTarget()"></select><div id="correctionSourceDetail" class="sub"></div><div id="correctionEmpty" class="sub">Recent entries will appear here.</div><button class="small" onclick="refreshCorrectionEntries()">REFRESH ENTRIES</button><div id="sessionCorrection" hidden><div class="section-kicker spaced">SESSION CORRECTION</div><select id="corrSessionCasino"></select><input id="corrSessionPlayer" autocomplete="off" placeholder="Player / card name"><div class="correction-grid"><input id="corrInitial" inputmode="decimal" placeholder="Initial load"><input id="corrReloads" inputmode="decimal" placeholder="Total reloads"></div><input id="corrFinal" inputmode="decimal" placeholder="Final cash-out"><input id="corrTierCredits" inputmode="decimal" placeholder="Tier Credits"><input id="corrMakeupShare" inputmode="decimal" placeholder="Makeup share %"><input id="corrPlayDetails" autocomplete="off" placeholder="Play details"><label class="chop-toggle"><input id="corrCardRun" type="checkbox"> CARD RUN</label><div id="corrSessionHandpays" class="sub"></div><div id="corrSessionSummary" class="sub"></div></div><div id="fpCorrection" hidden><div class="section-kicker spaced">FREE PLAY CORRECTION</div><select id="corrFpCasino"></select><input id="corrFpPlayer" autocomplete="off" placeholder="Name on player card"><div class="correction-grid"><input id="corrFpFace" inputmode="decimal" placeholder="Free play face value"><input id="corrFpCash" inputmode="decimal" placeholder="Actual cash collected"></div></div><div id="fpCoinInCorrection" hidden><div class="section-kicker spaced">COIN-IN PLAY CORRECTION</div><div id="corrFpCoinInParent" class="sub"></div><input id="corrFpCoinInExtra" inputmode="decimal" placeholder="Extra Coin-In"><input id="corrFpCoinInTier" inputmode="decimal" placeholder="Tier Credits"><div class="signed-input-row"><input id="corrFpCoinInResult" type="text" inputmode="decimal" pattern="[+-]?[0-9]*[.,]?[0-9]*" autocomplete="off" placeholder="Win / Loss result"><button type="button" class="small signed-input-toggle" onclick="toggleSignedInput('corrFpCoinInResult')" aria-label="Toggle win loss sign">±</button></div><input id="corrFpCoinInNote" autocomplete="off" placeholder="Coin-in note"></div><div id="adjustmentCorrection" hidden><div class="section-kicker spaced">BANKROLL MOVEMENT CORRECTION</div><div id="corrAdjustmentType" class="sub"></div><input id="corrAdjustmentAmount" inputmode="decimal" placeholder="Actual cash movement amount"><input id="corrAdjustmentNote" autocomplete="off" placeholder="Note (optional)"><div id="corrAdjustmentPhysical" class="sub"></div></div><input id="correctionReason" autocomplete="off" placeholder="Reason / note (optional)"><button class="orange" onclick="saveCorrection()">SAVE CORRECTION</button></section>
   <section class="card compact"><div class="row"><div><div class="section-kicker">BACKUP STATUS</div><div id="backupDetail" class="sub"></div></div><button class="small" onclick="syncNow(true)">SYNC NOW</button></div></section>
-  <section class="card compact"><div class="section-kicker">APP VERSION</div><div class="sub">AP Bankroll v8.8.0</div></section>
+  <section class="card compact"><div class="section-kicker">APP VERSION</div><div class="sub">AP Bankroll v8.8.1</div></section>
   <section class="card compact"><div class="section-kicker">SYNC SECURITY</div><div id="keyDetail" class="sub"></div><input id="syncKeyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Private sync key"><div class="row"><button class="small" onclick="saveSyncKey()">SAVE / CHANGE KEY</button><button class="small" onclick="clearSyncKey()">REMOVE KEY</button></div></section>
 </section>
 </main>
 <nav class="bottom-nav" aria-label="Main navigation"><button id="navHome" class="nav-item active" onclick="showPage('home')"><span class="nav-icon">⌂</span><span>Home</span></button><button id="navSchedule" class="nav-item" onclick="showPage('schedule')"><span class="nav-icon">▦</span><span>Schedule</span></button><button id="navAdd" class="nav-item nav-add" onclick="showPage('add')"><span class="plus" aria-hidden="true"></span><span>Add Entry</span></button><button id="navReports" class="nav-item" onclick="showPage('reports')"><span class="nav-icon">▥</span><span>Reports</span></button><button id="navMore" class="nav-item" onclick="showPage('more')"><span class="nav-icon">•••</span><span>More</span></button></nav>
-<script src="config.js?v=8.6.1"></script><script src="app.js?v=8.8.0"></script></body></html>
+<script src="config.js?v=8.6.1"></script><script src="app.js?v=8.8.1"></script></body></html>

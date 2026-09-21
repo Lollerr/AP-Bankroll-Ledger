@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.8.0';
+const APP_VERSION='8.8.1';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -848,7 +848,9 @@ function renderReports(){if(!$('reportsContent'))return;const r=reportFiltered()
  $('reportsContent').innerHTML=html}
 
 function setScheduleView(view){scheduleView=['date','casino','calendar'].includes(view)?view:'date';renderSchedule()}
-function scheduleData(){return baseline.scheduleData||{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]}}
+function scheduleNorm(v){return String(v||'').toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9]+/g,'')}
+function predictScheduleMatch(entries,casino,player,face,ts){const cn=scheduleNorm(casino),pn=scheduleNorm(player),target=new Date(ts||Date.now());if(isNaN(target.getTime()))return null;const td=new Date(target.getFullYear(),target.getMonth(),target.getDate()),fv=Number(face)||0,c=[];for(const x of entries){if(x.completed||scheduleNorm(x.location)!==cn||scheduleNorm(x.card)!==pn)continue;const d=new Date(String(x.date)+'T12:00:00');if(isNaN(d.getTime()))continue;const diff=Math.abs(Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate())-td)/86400000));if(diff>3)continue;let score=4-diff;if(!x.unknown&&Math.abs((Number(x.amount)||0)-fv)<.01)score+=5;c.push({x,score})}c.sort((a,b)=>b.score-a.score);if(!c.length||(c.length>1&&c[0].score===c[1].score))return null;return c[0].x}
+function scheduleData(){const base=baseline.scheduleData||{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]};if(!base.ok)return base;const d={...base,entries:(base.entries||[]).map(x=>({...x}))};for(const e of pending()){if(e.type==='schedule_complete'){const x=d.entries.find(v=>String(v.rowKey)===String(e.payload?.rowKey||''));if(x)x.completed=!!e.payload.completed}else if(e.type==='freeplay'){const m=predictScheduleMatch(d.entries,e.payload?.casino,e.payload?.playerName,e.payload?.faceValue,e.ts);if(m)m.completed=true}}d.completedCount=d.entries.filter(x=>x.completed).length;d.remainingCount=d.entries.length-d.completedCount;d.remainingTotal=round2(d.entries.filter(x=>!x.completed).reduce((a,x)=>a+(Number(x.amount)||0),0));return d}
 function localDateKey(d=new Date()){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
 function dateFromKey(k){const m=String(k||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?new Date(Number(m[1]),Number(m[2])-1,Number(m[3])):new Date()}
 function addDaysKey(k,n){const d=dateFromKey(k);d.setDate(d.getDate()+n);return localDateKey(d)}
@@ -868,7 +870,7 @@ function renderSchedule(){
   $('scheduleMonth').textContent=d.ok?d.monthLabel:'Schedule';
   $('schTotal').textContent=d.ok?money0(d.knownTotal):'—';$('schPay').textContent=d.ok?money(d.projectedPay):'—';
   $('schKnown').textContent=d.ok?String(d.knownCount):'—';$('schUnknown').textContent=d.ok?String(d.unknownCount):'—';
-  $('scheduleMeta').textContent=d.ok?`${d.entryCount} scheduled entries · ${d.knownCount} known Free Play amounts · ${d.unknownCount} unknown · Last cloud sync ${baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'—'}`:'Schedule unavailable until the next successful sync.';
+  $('scheduleMeta').textContent=d.ok?`${d.remainingCount} remaining · ${d.completedCount} collected · ${money0(d.remainingTotal)} remaining · ${d.unknownCount} unknown · Last cloud sync ${baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'—'}`:'Schedule unavailable until the next successful sync.';
   if(!d.ok){$('scheduleContent').innerHTML='<div class="schedule-empty">Schedule data is not available yet. Connect to the internet and tap SYNC NOW.</div>';return}
   if(scheduleView==='casino') renderScheduleCasino(d); else if(scheduleView==='calendar') renderScheduleCalendar(d); else renderScheduleDate(d);
 }
@@ -876,8 +878,9 @@ function renderWorkOffer(x){
   const amt=x.unknown?'IDK':money0(x.amount);
   const details=[x.time?esc(x.time):'',x.pin?`PIN ${esc(x.pin)}`:'',x.coinIn?`Coin-In ${esc(x.coinIn)}`:''].filter(Boolean);
   if(x.fpRaw&&x.amount>0&&x.fpRaw.replace(/[$,\s]/g,'')!==String(x.amount))details.push(`Free Play ${esc(x.fpRaw)}`);
-  return `<div class="work-offer-row"><div class="work-offer-main"><div class="work-offer-name">${esc(x.card||'No card')}</div><div class="work-offer-meta">${details.join(' · ')||'No additional details'}</div></div><div class="work-offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
+  return `<div class="work-offer-row ${x.completed?'completed':''}"><button class="schedule-check ${x.completed?'done':''}" onclick="toggleScheduleComplete('${esc(x.rowKey||'')}',${x.completed?'true':'false'})" aria-label="${x.completed?'Mark not collected':'Mark collected'}">${x.completed?'✓':'○'}</button><div class="work-offer-main"><div class="work-offer-name">${esc(x.card||'No card')}</div><div class="work-offer-meta">${details.join(' · ')||'No additional details'}${x.completed?' · COLLECTED':''}</div></div><div class="work-offer-amount ${x.unknown?'unknown':''}">${esc(amt)}</div></div>`;
 }
+async function toggleScheduleComplete(rowKey,current){if(!rowKey){setStatus('Schedule entry is missing its row key. Sync and try again.');return}const ev=event('schedule_complete',{rowKey,completed:!current,source:'manual'});await commitLocal(ev,null,!current?'Schedule pickup marked collected':'Schedule pickup marked not collected')}
 function renderSelectedDay(d,date){
   const rows=(d.entries||[]).filter(x=>x.date===date),by=new Map();
   for(const x of rows){const k=x.location||'Unknown location';if(!by.has(k))by.set(k,[]);by.get(k).push(x)}
