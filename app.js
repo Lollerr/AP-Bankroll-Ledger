@@ -1,12 +1,12 @@
 'use strict';
-const APP_VERSION='8.8.1';
+const APP_VERSION='8.8.2';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
 let actionLocked=false,syncRunning=false;
 let bootstrapReady=false,cloudError='';
 let currentPage='home',scheduleView='date',entryView='session',reportView='overview',selectedFpCollectionId='';
-let scheduleSelectedDate='',schedulePriorOpen=false,scheduleJumpOpen=false;
+let scheduleSelectedDate='',scheduleSelectedMonth='',schedulePriorOpen=false,scheduleJumpOpen=false;
 
 const $=id=>document.getElementById(id);
 const money=n=>'$'+Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -850,24 +850,25 @@ function renderReports(){if(!$('reportsContent'))return;const r=reportFiltered()
 function setScheduleView(view){scheduleView=['date','casino','calendar'].includes(view)?view:'date';renderSchedule()}
 function scheduleNorm(v){return String(v||'').toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9]+/g,'')}
 function predictScheduleMatch(entries,casino,player,face,ts){const cn=scheduleNorm(casino),pn=scheduleNorm(player),target=new Date(ts||Date.now());if(isNaN(target.getTime()))return null;const td=new Date(target.getFullYear(),target.getMonth(),target.getDate()),fv=Number(face)||0,c=[];for(const x of entries){if(x.completed||scheduleNorm(x.location)!==cn||scheduleNorm(x.card)!==pn)continue;const d=new Date(String(x.date)+'T12:00:00');if(isNaN(d.getTime()))continue;const diff=Math.abs(Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate())-td)/86400000));if(diff>3)continue;let score=4-diff;if(!x.unknown&&Math.abs((Number(x.amount)||0)-fv)<.01)score+=5;c.push({x,score})}c.sort((a,b)=>b.score-a.score);if(!c.length||(c.length>1&&c[0].score===c[1].score))return null;return c[0].x}
-function scheduleData(){const base=baseline.scheduleData||{ok:false,monthLabel:'',entries:[],breakdown:[],unknown:[]};if(!base.ok)return base;const d={...base,entries:(base.entries||[]).map(x=>({...x}))};for(const e of pending()){if(e.type==='schedule_complete'){const x=d.entries.find(v=>String(v.rowKey)===String(e.payload?.rowKey||''));if(x)x.completed=!!e.payload.completed}else if(e.type==='freeplay'){const m=predictScheduleMatch(d.entries,e.payload?.casino,e.payload?.playerName,e.payload?.faceValue,e.ts);if(m)m.completed=true}}d.completedCount=d.entries.filter(x=>x.completed).length;d.remainingCount=d.entries.length-d.completedCount;d.remainingTotal=round2(d.entries.filter(x=>!x.completed).reduce((a,x)=>a+(Number(x.amount)||0),0));return d}
+function scheduleData(){const base=baseline.scheduleData||{ok:false,monthLabel:'',monthKey:'',months:[],entries:[],breakdown:[],unknown:[]};if(!base.ok)return base;const all=(base.entries||[]).map(x=>({...x}));for(const e of pending()){if(e.type==='schedule_complete'){const x=all.find(v=>String(v.rowKey)===String(e.payload?.rowKey||''));if(x)x.completed=!!e.payload.completed}else if(e.type==='freeplay'){const m=predictScheduleMatch(all,e.payload?.casino,e.payload?.playerName,e.payload?.faceValue,e.ts);if(m)m.completed=true}}const months=(base.months||[]).map(x=>({...x}));if(!scheduleSelectedMonth)scheduleSelectedMonth=base.monthKey||(months[0]&&months[0].monthKey)||'';if(months.length&&!months.some(x=>x.monthKey===scheduleSelectedMonth))scheduleSelectedMonth=base.monthKey||months[0].monthKey;const entries=all.filter(x=>!scheduleSelectedMonth||x.monthKey===scheduleSelectedMonth),m=months.find(x=>x.monthKey===scheduleSelectedMonth)||{};const by={};for(const x of entries){const k=x.location||'Unknown location';if(!by[k])by[k]={location:k,offers:0,total:0,unknownCount:0};by[k].offers++;by[k].total+=Number(x.amount)||0;if(x.unknown)by[k].unknownCount++}const breakdown=Object.values(by).map(x=>({...x,total:round2(x.total),pay:round2(x.total*.15)})).sort((a,b)=>b.total-a.total||a.location.localeCompare(b.location));const knownTotal=round2(entries.reduce((a,x)=>a+(Number(x.amount)||0),0)),unknown=entries.filter(x=>x.unknown),completedCount=entries.filter(x=>x.completed).length;return {...base,...m,monthKey:scheduleSelectedMonth,monthLabel:m.monthLabel||base.monthLabel,months,allEntries:all,entries,breakdown,unknown,knownTotal,projectedPay:round2(knownTotal*.15),entryCount:entries.length,knownCount:entries.length-unknown.length,unknownCount:unknown.length,completedCount,remainingCount:entries.length-completedCount,remainingTotal:round2(entries.filter(x=>!x.completed).reduce((a,x)=>a+(Number(x.amount)||0),0))}}
 function localDateKey(d=new Date()){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
 function dateFromKey(k){const m=String(k||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?new Date(Number(m[1]),Number(m[2])-1,Number(m[3])):new Date()}
 function addDaysKey(k,n){const d=dateFromKey(k);d.setDate(d.getDate()+n);return localDateKey(d)}
 function workDateLabel(k){const d=dateFromKey(k),today=localDateKey();const prefix=k===today?'TODAY · ':'';return prefix+d.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toUpperCase()}
 function scheduleDates(d){return [...new Set((d.entries||[]).map(x=>x.date).filter(Boolean))].sort()}
 function ensureScheduleDate(d){if(!scheduleSelectedDate)scheduleSelectedDate=localDateKey();return scheduleSelectedDate}
-function moveScheduleDate(n){scheduleSelectedDate=addDaysKey(ensureScheduleDate(scheduleData()),n);schedulePriorOpen=false;scheduleJumpOpen=false;renderSchedule()}
-function scheduleToday(){scheduleSelectedDate=localDateKey();schedulePriorOpen=false;scheduleJumpOpen=false;renderSchedule()}
+function moveScheduleDate(n){scheduleSelectedDate=addDaysKey(ensureScheduleDate(scheduleData()),n);scheduleSelectedMonth=scheduleSelectedDate.slice(0,7);schedulePriorOpen=false;scheduleJumpOpen=false;renderSchedule()}
+function scheduleToday(){scheduleSelectedDate=localDateKey();scheduleSelectedMonth=scheduleSelectedDate.slice(0,7);schedulePriorOpen=false;scheduleJumpOpen=false;renderSchedule()}
 function toggleSchedulePrior(){schedulePriorOpen=!schedulePriorOpen;scheduleJumpOpen=false;renderSchedule()}
 function toggleScheduleJump(){scheduleJumpOpen=!scheduleJumpOpen;schedulePriorOpen=false;renderSchedule()}
-function jumpScheduleDate(){const el=$('scheduleJumpDate');if(el&&el.value){scheduleSelectedDate=el.value;scheduleJumpOpen=false;schedulePriorOpen=false;renderSchedule()}}
-function chooseScheduleDate(k){scheduleSelectedDate=k;schedulePriorOpen=false;scheduleJumpOpen=false;renderSchedule()}
+function jumpScheduleDate(){const el=$('scheduleJumpDate');if(el&&el.value){scheduleSelectedDate=el.value;scheduleSelectedMonth=el.value.slice(0,7);scheduleJumpOpen=false;schedulePriorOpen=false;renderSchedule()}}
+function chooseScheduleDate(k){scheduleSelectedDate=k;scheduleSelectedMonth=String(k).slice(0,7);schedulePriorOpen=false;scheduleJumpOpen=false;renderSchedule()}
+function moveScheduleMonth(n){const d=scheduleData(),keys=(d.months||[]).map(x=>x.monthKey),i=keys.indexOf(scheduleSelectedMonth),j=i+n;if(j<0||j>=keys.length)return;scheduleSelectedMonth=keys[j];const parts=scheduleSelectedMonth.split('-').map(Number);scheduleSelectedDate=`${scheduleSelectedMonth}-01`;schedulePriorOpen=false;scheduleJumpOpen=false;renderSchedule()}
 function renderSchedule(){
   if(!$('scheduleContent')) return;
   const d=scheduleData();
   $('viewDate').classList.toggle('active',scheduleView==='date');$('viewCasino').classList.toggle('active',scheduleView==='casino');$('viewCalendar').classList.toggle('active',scheduleView==='calendar');
-  $('scheduleMonth').textContent=d.ok?d.monthLabel:'Schedule';
+  $('scheduleMonth').innerHTML=d.ok?`<button class="small" onclick="moveScheduleMonth(-1)" ${((d.months||[]).map(x=>x.monthKey).indexOf(d.monthKey)<=0)?'disabled':''}>‹</button> <span>${esc(d.monthLabel)}</span> <button class="small" onclick="moveScheduleMonth(1)" ${((d.months||[]).map(x=>x.monthKey).indexOf(d.monthKey)>=(d.months||[]).length-1)?'disabled':''}>›</button>`:'Schedule';
   $('schTotal').textContent=d.ok?money0(d.knownTotal):'—';$('schPay').textContent=d.ok?money(d.projectedPay):'—';
   $('schKnown').textContent=d.ok?String(d.knownCount):'—';$('schUnknown').textContent=d.ok?String(d.unknownCount):'—';
   $('scheduleMeta').textContent=d.ok?`${d.remainingCount} remaining · ${d.completedCount} collected · ${money0(d.remainingTotal)} remaining · ${d.unknownCount} unknown · Last cloud sync ${baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'—'}`:'Schedule unavailable until the next successful sync.';
