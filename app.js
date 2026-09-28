@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.8.2';
+const APP_VERSION='8.8.3';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -953,8 +953,22 @@ async function bootstrapRemote(keyOverride=syncKey){
   bootstrapReady=true;cloudError='';
   await metaSet('baseline',baseline);
   if(pending().length===0){
-    if(data.state?.session) localState={active:{sessionId:data.state.session,casino:data.state.casino,playerName:data.state.playerName,initial:Number(data.state.initial)||0,reloads:Number(data.state.reloads)||0,totalDeployed:Number(data.state.totalDeployed)||0,handpays:Number(data.state.handpays)||0},lastReload:data.lastReload||null};
-    else localState=defaultState();
+    // Coin-In trackers are intentionally device-local until FINISH is pressed.
+    // A remote bootstrap may refresh the normal AP session, but it must never
+    // replace the whole localState object and erase an in-progress Coin-In play.
+    const preservedCoinIn=localState?.activeCoinIn||null;
+    const preservedCoinInReload=localState?.lastCoinInReload||null;
+    if(data.state?.session){
+      localState={
+        ...localState,
+        active:{sessionId:data.state.session,casino:data.state.casino,playerName:data.state.playerName,initial:Number(data.state.initial)||0,reloads:Number(data.state.reloads)||0,totalDeployed:Number(data.state.totalDeployed)||0,handpays:Number(data.state.handpays)||0},
+        lastReload:data.lastReload||null,
+        activeCoinIn:preservedCoinIn,
+        lastCoinInReload:preservedCoinInReload
+      };
+    }else{
+      localState={...localState,active:null,lastReload:null,activeCoinIn:preservedCoinIn,lastCoinInReload:preservedCoinInReload};
+    }
     await saveState();
   }
   populateCasinos();populateFpPlayers();render();return true;
