@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.8.4';
+const APP_VERSION='8.8.5';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -102,6 +102,7 @@ function viewData(){
       const amt=Number(e.payload.amount)||0;
       fpPaid+=amt;
       expected-=amt;
+      physical-=amt;
     }
     if(e.type==='bankroll_adjustment'){
       const amt=Number(e.payload.amount)||0;
@@ -358,9 +359,9 @@ async function settleFreePlay(){
   if(amount>v.expected){setStatus('The whole-dollar fee payment exceeds the current expected bankroll. Reconcile or correct the ledger before paying it from the roll.');return}
   const remainder=round2(due-amount);
   const remainderText=remainder>0?(' The remaining '+money(remainder)+' will stay payable and carry forward.'):' This will clear the current payable balance.';
-  if(!confirm('Pay yourself '+money0(amount)+' from the bankroll?'+remainderText+' Expected bankroll will be reduced by '+money0(amount)+' and the corresponding Rusty free play collections will be marked paid/partially paid when sync completes.')) return;
+  if(!confirm('Pay yourself '+money0(amount)+' from the bankroll?'+remainderText+' Expected and physical bankroll will both be reduced by '+money0(amount)+', preserving the current variance, and the corresponding Rusty free play collections will be marked paid/partially paid when sync completes.')) return;
   const ev=event('fp_settlement',{amount:amount,note:'Free play commission paid from bankroll (whole-dollar cash settlement)'});
-  await commitLocal(ev,null,'Whole-dollar 15% payment recorded · residual cents carry forward · Rusty settlement mirror queued');
+  await commitLocal(ev,null,'Whole-dollar 15% payment recorded · physical bankroll updated · residual cents carry forward · Rusty settlement mirror queued');
 }
 
 function bankrollAdjustmentLabel(kind){
