@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.8.5';
+const APP_VERSION='8.8.6';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -262,7 +262,9 @@ async function saveFreePlay(){
   if(faceRaw===''||!Number.isFinite(face)||face<=0){setStatus('Enter the free play face value.');return}
   if(cashRaw===''||!Number.isFinite(cash)||cash<0){setStatus('Enter the actual cash-out.');return}
   const ev=event('freeplay',{casino,playerName:player,faceValue:face,cashOut:cash});
+  const matches=unlinkedCoinInPlays().filter(x=>x.casino===casino&&x.playerName.toLowerCase()===player.toLowerCase());
   await commitLocal(ev,()=>{$('fpPlayerName').value='';$('fpFaceValue').value='';$('fpCashOut').value='';const dd=$('fpPlayerDropdown');if(dd)dd.hidden=true},'Free play recorded');
+  if(matches.length===1&&confirm('You have an unlinked coin-in play for '+player+' at '+casino+'. Link it to this collection now?')) await linkUnlinkedCoinInToCollection(matches[0].id,ev.id);
 }
 
 function freePlayCollections(){
@@ -299,6 +301,7 @@ function freePlayCollections(){
   return [...map.values()].sort((a,b)=>String(b.ts||'').localeCompare(String(a.ts||'')));
 }
 function renderFpCollections(){
+  syncPreCoinInSelectors();
   const list=$('fpCollectionList');if(!list)return;
   const rows=freePlayCollections().slice(0,20);
   if(!rows.length){list.innerHTML='<div class="sub">No free play collections recorded yet.</div>';return}
@@ -316,6 +319,52 @@ function openFpCoinIn(id){
   $('fpCoinInInitial').focus();
 }
 function cancelFpCoinIn(){selectedFpCollectionId='';$('fpCoinInCard').hidden=true}
+
+function syncPreCoinInSelectors(){
+  const src=$('fpCasinoSelect'),dst=$('preFpCoinInCasino');
+  if(src&&dst&&dst.options.length!==src.options.length) dst.innerHTML=src.innerHTML;
+}
+async function startFpCoinInBeforeCollection(){
+  syncPreCoinInSelectors();
+  if(localState.active||localState.activeCoinIn){setStatus('Another play is already active.');return}
+  const casino=$('preFpCoinInCasino')?.value||$('fpCasinoSelect')?.value||'';
+  const rawPlayer=$('preFpCoinInPlayer')?.value.trim()||'',player=canonicalFpPlayer(rawPlayer);
+  const raw=$('preFpCoinInInitial')?.value.trim().replace(/,/g,'')||'',initial=Number(raw);
+  const note=$('preFpCoinInStartNote')?.value.trim()||'';
+  if(!casino){setStatus('Select the casino.');return}
+  if(!rawPlayer){setStatus('Select the name on the player card.');return}
+  if(!player){setStatus('Player/card name is not recognized. Select a name from the Rusty list.');return}
+  if(raw===''||!Number.isFinite(initial)||initial<=0){setStatus('Enter the initial cash inserted.');return}
+  localState.activeCoinIn={trackerId:'CI-'+uuid(),conversionId:'',casino,playerName:player,initial:round2(initial),reloads:0,totalDeployed:round2(initial),handpays:0,note,startedAt:new Date().toISOString(),preCollection:true};
+  localState.lastCoinInReload=null;
+  for(const id of ['preFpCoinInPlayer','preFpCoinInInitial','preFpCoinInStartNote']) if($(id))$(id).value='';
+  await saveState();render();openActiveFpCoinIn();setStatus('Pre-collection coin-in started · it can be linked after the free play collection is entered');
+}
+function unlinkedCoinInPlays(){
+  const rows=[];
+  for(const x of (baseline.reports?.freePlayCoinIn||[])){
+    if(!String(x.conversionId||'').trim()) rows.push({id:String(x.id||x.coinInId||''),ts:x.ts||'',casino:x.casino||'',playerName:x.playerName||'',extraCoinIn:Number(x.extraCoinIn)||0,tierCredits:Number(x.tierCredits)||0,result:Number(x.result)||0,note:x.note||''});
+  }
+  for(const e of pending()){
+    const p=e.payload||{};
+    if(e.type==='fp_coinin'&&!String(p.conversionId||'').trim()) rows.push({id:e.id,ts:e.ts,casino:p.casino||'',playerName:p.playerName||'',extraCoinIn:Number(p.extraCoinIn)||0,tierCredits:Number(p.tierCredits)||0,result:Number(p.result)||0,note:p.note||''});
+    if(e.type==='fp_coinin_link'){
+      const i=rows.findIndex(x=>String(x.id)===String(p.coinInId));if(i>=0)rows.splice(i,1);
+    }
+  }
+  return rows.sort((a,b)=>String(b.ts||'').localeCompare(String(a.ts||'')));
+}
+async function linkUnlinkedCoinInToCollection(coinInId,conversionId){
+  const ci=unlinkedCoinInPlays().find(x=>String(x.id)===String(coinInId));
+  const fp=freePlayCollections().find(x=>String(x.id)===String(conversionId));
+  if(!ci||!fp){setStatus('Coin-in play or free play collection was not found.');return}
+  if(ci.casino!==fp.casino||ci.playerName.toLowerCase()!==fp.playerName.toLowerCase()){
+    if(!confirm('The casino/player do not exactly match. Link this coin-in play to this collection anyway?'))return;
+  }
+  const ev=event('fp_coinin_link',{coinInId,conversionId});
+  await commitLocal(ev,null,'Coin-in play linked to free play collection · Rusty mirror queued');
+}
+
 async function startFpCoinInTracker(){
   const x=freePlayCollections().find(v=>String(v.id)===String(selectedFpCollectionId));if(!x){setStatus('Select a free play collection first.');return}
   if(localState.active||localState.activeCoinIn){setStatus('Another play is already active.');return}
@@ -345,7 +394,7 @@ async function finishFpCoinInTracker(){
   const finalRaw=$('fpCoinInFinalCash').value.trim().replace(/,/g,''),final=Number(finalRaw),extraRaw=$('fpExtraCoinIn').value.trim().replace(/,/g,''),tierRaw=$('fpCoinInTierCredits').value.trim().replace(/,/g,'');
   const extra=extraRaw===''?0:Number(extraRaw),tier=tierRaw===''?0:Number(tierRaw);if(finalRaw===''||!Number.isFinite(final)||final<0){setStatus('Enter the final cash / TITO amount.');return}if(!Number.isFinite(extra)||extra<0){setStatus('Extra Coin-In must be zero or more.');return}if(!Number.isFinite(tier)||tier<0){setStatus('Tier Credits must be zero or more.');return}
   const result=round2(final+(Number(a.handpays)||0)-(Number(a.totalDeployed)||0)),note=$('fpCoinInNote').value.trim()||a.note||'';
-  const ev=event('fp_coinin',{conversionId:a.conversionId,casino:a.casino,playerName:a.playerName,extraCoinIn:round2(extra),tierCredits:round2(tier),result,note});
+  const ev=event('fp_coinin',{conversionId:a.conversionId||'',casino:a.casino,playerName:a.playerName,extraCoinIn:round2(extra),tierCredits:round2(tier),result,note});
   await commitLocal(ev,()=>{localState.activeCoinIn=null;localState.lastCoinInReload=null;for(const id of ['fpCoinInFinalCash','fpExtraCoinIn','fpCoinInTierCredits','fpCoinInNote','fpCoinInCustomReload','fpCoinInHandpayAmount'])if($(id))$(id).value='';$('fpCoinInActiveCard').hidden=true},'Coin-in play closed · '+(result<0?'−':'')+money(Math.abs(result))+' P/L recorded');
 }
 async function abandonFpCoinInTracker(){if(!localState.activeCoinIn)return;if(!confirm('Abandon this coin-in tracker? No win/loss result will be added to the ledger.'))return;localState.activeCoinIn=null;localState.lastCoinInReload=null;await saveState();render();setStatus('Coin-in tracker abandoned')}
