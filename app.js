@@ -1,10 +1,12 @@
 'use strict';
-const APP_VERSION='8.8.9';
+const APP_VERSION='8.9.0';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
 let actionLocked=false,syncRunning=false;
 let syncStartedAt=0,syncPhase='idle',lastSyncDiagnostic='';
+const RECOVERY_EVENT_ID='0bb6ad6b-5b62-4f80-80d9-e20ff4e45301';
+let recoveryRetryAuthorized=false;
 let bootstrapReady=false,cloudError='';
 let currentPage='home',scheduleView='date',entryView='session',reportView='overview',selectedFpCollectionId='';
 let scheduleSelectedDate='',scheduleSelectedMonth='',schedulePriorOpen=false,scheduleJumpOpen=false;
@@ -1042,9 +1044,40 @@ function renderSyncDiagnostics(){
     line.textContent=e.type+' · '+(e.amount!==''?('amount '+e.amount+' · '):'')+(e.time||'time unavailable')+' · ID '+e.id;
     el.appendChild(line);
   }
+  const recovery=pending().find(e=>e.id===RECOVERY_EVENT_ID);
+  if(recovery){
+    const box=document.createElement('div');box.style.cssText='margin-top:10px;overflow-wrap:anywhere';
+    const serverExpected=Number(baseline.recon?.expected);
+    const validServer=bootstrapReady&&Number.isFinite(serverExpected);
+    const amount=Number(recovery.payload?.amount);
+    const kind=String(recovery.payload?.kind||'');
+    const info=document.createElement('div');
+    info.textContent='RECOVERY: '+kind+' · '+money(amount)+' · '+(validServer?'Server expected bankroll before distribution: '+money(serverExpected)+' · After: '+money(serverExpected-amount):'Server ledger not yet refreshed')+'. Original event retained.';
+    box.appendChild(info);
+    if(validServer&&serverExpected+0.011<amount){
+      const warning=document.createElement('div');warning.textContent='BLOCKED: server expected bankroll is below the distribution amount. Do not submit a duplicate. Review the ledger reconciliation first.';box.appendChild(warning);
+    }else if(validServer&&kind==='backer_distribution'&&amount===47071){
+      const btn=document.createElement('button');btn.className='small';btn.style.marginTop='8px';btn.textContent='RETRY ORIGINAL $47,071 DISTRIBUTION';
+      btn.disabled=syncRunning;btn.onclick=()=>retryRecoveryDistribution();box.appendChild(btn);
+    }
+    el.appendChild(box);
+  }
   const phase=document.createElement('div');phase.style.cssText='margin-top:6px;overflow-wrap:anywhere';
   phase.textContent='Sync: '+syncPhase+(syncRunning?' (in progress)':'')+(lastSyncDiagnostic?' · '+lastSyncDiagnostic:'');
   el.appendChild(phase);
+}
+async function retryRecoveryDistribution(){
+  if(syncRunning){setStatus('Sync is in progress. Wait until it finishes.');return}
+  await refreshEvents();
+  const ev=pending().find(e=>e.id===RECOVERY_EVENT_ID);
+  if(!ev){setStatus('The original distribution is no longer pending. Refresh the ledger to verify.');return}
+  if(ev.type!=='bankroll_adjustment'||ev.payload?.kind!=='backer_distribution'||Number(ev.payload?.amount)!==47071){setStatus('Recovery event details do not match. No retry performed.');return}
+  if(!bootstrapReady||!Number.isFinite(Number(baseline.recon?.expected))){setStatus('Refresh the server ledger before retrying.');return}
+  const expected=Number(baseline.recon.expected);
+  if(expected+0.011<47071){setStatus('Server expected bankroll '+money(expected)+' is below $47,071. Retry blocked.');return}
+  if(!confirm('Retry the ORIGINAL $47,071 backer distribution with its existing event ID? Server expected bankroll: '+money(expected)+'. This will not create a new local transaction.'))return;
+  recoveryRetryAuthorized=true;
+  try{await syncNow(true)}finally{recoveryRetryAuthorized=false}
 }
 async function syncNow(manual=false){
   if(syncRunning){
@@ -1062,7 +1095,25 @@ async function syncNow(manual=false){
   let uploadError=null,refreshError=null;
   try{
     await refreshEvents();renderSyncDiagnostics();
+    // Always read the server first. The local queue may include a large distribution
+    // whose validation depends on the authoritative server bankroll.
+    syncPhase='refreshing server ledger';renderSyncDiagnostics();
+    try{await bootstrapRemote()}catch(err){refreshError=err}
     let unsynced=pending();
+    // Never automatically resubmit the known $47,071 event. The original event
+    // stays in IndexedDB until an explicit, confirmed retry succeeds.
+    const quarantined=unsynced.find(e=>e.id===RECOVERY_EVENT_ID);
+    if(quarantined&&!recoveryRetryAuthorized){
+      lastSyncDiagnostic='Original $47,071 distribution held for explicit recovery; server ledger refresh attempted';
+      unsynced=unsynced.filter(e=>e.id!==RECOVERY_EVENT_ID);
+    }
+    if(quarantined&&recoveryRetryAuthorized){
+      const expected=Number(baseline.recon?.expected);
+      if(refreshError||!Number.isFinite(expected)||expected+0.011<47071){
+        uploadError=new Error('Cannot safely retry $47,071: server ledger unavailable or expected bankroll below amount');
+        unsynced=unsynced.filter(e=>e.id!==RECOVERY_EVENT_ID);
+      }
+    }
     while(unsynced.length){
       syncPhase='uploading '+unsynced.length+' pending';renderSyncDiagnostics();
       try{
@@ -1075,12 +1126,12 @@ async function syncNow(manual=false){
           throw new Error('Server rejected event '+String(first?.id||batch[0]?.id||'')+': '+String(first?.error||'unknown reason'));
         }
         if(!acked.length)throw new Error('Server did not acknowledge event '+String(batch[0]?.id||''));
-        unsynced=pending();
+        unsynced=pending().filter(e=>e.id!==RECOVERY_EVENT_ID||recoveryRetryAuthorized);
       }catch(err){uploadError=err;break}
     }
     // A rejected local event must not prevent read-only ledger refresh.
     syncPhase='refreshing server ledger';renderSyncDiagnostics();
-    try{await bootstrapRemote()}catch(err){refreshError=err}
+    if(!refreshError)try{await bootstrapRemote()}catch(err){refreshError=err}
     // Only acknowledged events may be deleted. Unacknowledged events are retained.
     if(!refreshError){syncPhase='cleaning acknowledged events';await deleteSynced()}
     if(uploadError||refreshError){
@@ -1092,7 +1143,7 @@ async function syncNow(manual=false){
       setStatus('Sync incomplete; local entries preserved. '+lastSyncDiagnostic);
     }else{
       cloudError='';lastSyncDiagnostic='Ledger refreshed successfully';
-      if(manual)setStatus('Google backup is current and ledger data is loaded.');
+      if(manual)setStatus(pending().length?'Ledger refreshed; original $47,071 distribution remains safely pending.':'Google backup is current and ledger data is loaded.');
     }
   }catch(err){
     lastSyncDiagnostic='Sync failure: '+String(err.message||err);
