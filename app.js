@@ -1,9 +1,10 @@
 'use strict';
-const APP_VERSION='8.8.7';
+const APP_VERSION='8.8.9';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
 let actionLocked=false,syncRunning=false;
+let syncStartedAt=0,syncPhase='idle',lastSyncDiagnostic='';
 let bootstrapReady=false,cloudError='';
 let currentPage='home',scheduleView='date',entryView='session',reportView='overview',selectedFpCollectionId='';
 let scheduleSelectedDate='',scheduleSelectedMonth='',schedulePriorOpen=false,scheduleJumpOpen=false;
@@ -692,7 +693,7 @@ function render(){
   $('fpPayable').textContent=money(v.fpPayable);$('fpPayDetail').textContent=money(v.fpRecordedEarned)+' recorded earned · '+money(v.fpLegacy)+' legacy opening payable · '+money(v.fpPaid)+' paid';$('settleBtn').disabled=actionLocked||!cloudLoaded||v.fpPayable<=0;
   $('variance').textContent=(v.variance<0?'−':'')+money(Math.abs(v.variance));$('variance').className='big '+(v.variance===0?'good':'bad');$('reconDetail').textContent='Expected '+money(v.expected)+' · Physical '+money(v.physical);
   const online=navigator.onLine,p=v.pending,badge=$('syncBadge');if(!endpointConfigured()){badge.className='badge warn';badge.textContent='SETUP'}else if(!syncKey){badge.className='badge warn';badge.textContent='KEY NEEDED'}else if(cloudError&&!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC ERROR'}else if(!cloudLoaded){badge.className='badge warn';badge.textContent='SYNC NEEDED'}else{badge.className='badge '+(!online||p?'warn':'ok');badge.textContent=!online?'OFFLINE':p?(p+' PENDING'):'BACKED UP'}
-  const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';const backup=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required.':!cloudLoaded?(cloudError?`Ledger data unavailable — ${cloudError}.`:'Ledger data unavailable — sync required.'):p?`${p} local entr${p===1?'y':'ies'} awaiting backup · Last sync ${last}`:`All local entries backed up · Last sync ${last}`;$('backupDetail').textContent=backup;$('keyDetail').textContent=syncKey?(cloudLoaded?'Private sync key verified on this device.':'A private sync key is stored, but it has not successfully loaded the ledger yet.'):'No private sync key saved on this device.';
+  const last=baseline.syncAt?new Date(baseline.syncAt).toLocaleString():'Never';const backup=!endpointConfigured()?'Cloud endpoint not configured.':!syncKey?'Private sync key required.':!cloudLoaded?(cloudError?`Ledger data unavailable — ${cloudError}.`:'Ledger data unavailable — sync required.'):p?`${p} local entr${p===1?'y':'ies'} awaiting backup · Last sync ${last}`:`All local entries backed up · Last sync ${last}`;$('backupDetail').textContent=backup;renderSyncDiagnostics();$('keyDetail').textContent=syncKey?(cloudLoaded?'Private sync key verified on this device.':'A private sync key is stored, but it has not successfully loaded the ledger yet.'):'No private sync key saved on this device.';
   renderCorrectionPicker();renderBankrollMovement();renderFpCollections();if(currentPage==='schedule')renderSchedule();if(currentPage==='reports')renderReports();
 }
 function esc(v){return String(v??'').replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
@@ -1023,36 +1024,83 @@ async function bootstrapRemote(keyOverride=syncKey){
   }
   populateCasinos();populateFpPlayers();render();return true;
 }
+function pendingDiagnostics(){
+  return pending().map(e=>{
+    const p=e.payload||{};
+    const amount=e.type==='fp_settlement'?p.amount:(e.type==='freeplay'?(p.cashOut??p.cashout??p.finalCash??''):p.amount??'');
+    return {id:String(e.id||''),type:String(e.type||'unknown'),time:e.ts||'',amount};
+  });
+}
+function renderSyncDiagnostics(){
+  const el=$('syncDiagnostics');if(!el)return;
+  const entries=pendingDiagnostics();
+  el.replaceChildren();
+  const head=document.createElement('div');head.textContent='LOCAL QUEUE DIAGNOSTICS · '+entries.length+' pending';el.appendChild(head);
+  for(const e of entries){
+    const line=document.createElement('div');
+    line.style.cssText='margin-top:6px;overflow-wrap:anywhere';
+    line.textContent=e.type+' · '+(e.amount!==''?('amount '+e.amount+' · '):'')+(e.time||'time unavailable')+' · ID '+e.id;
+    el.appendChild(line);
+  }
+  const phase=document.createElement('div');phase.style.cssText='margin-top:6px;overflow-wrap:anywhere';
+  phase.textContent='Sync: '+syncPhase+(syncRunning?' (in progress)':'')+(lastSyncDiagnostic?' · '+lastSyncDiagnostic:'');
+  el.appendChild(phase);
+}
 async function syncNow(manual=false){
-  if(syncRunning) return;
+  if(syncRunning){
+    if(manual){
+      const seconds=syncStartedAt?Math.floor((Date.now()-syncStartedAt)/1000):0;
+      setStatus('Sync already running ('+syncPhase+', '+seconds+'s). Pending entry details are shown under Backup Status.');
+      renderSyncDiagnostics();
+    }
+    return;
+  }
   if(!endpointConfigured()){if(manual)setStatus('Set the Cloudflare Worker URL in config.js first.');return}
   if(!syncKey){if(manual)setStatus('Save the private sync key on this device first.');render();return}
   if(!navigator.onLine){if(manual)setStatus('Offline. Entries are safe locally and will sync when service returns.');render();return}
-  syncRunning=true;
+  syncRunning=true;syncStartedAt=Date.now();syncPhase='reading local queue';lastSyncDiagnostic='';
+  let uploadError=null,refreshError=null;
   try{
-    await refreshEvents();
+    await refreshEvents();renderSyncDiagnostics();
     let unsynced=pending();
     while(unsynced.length){
-      const batch=unsynced.slice(0,20);
-      const result=await cloudRequest('/sync',{method:'POST',body:{action:'sync',events:batch},timeout:45000});
-      const acked=Array.isArray(result?.acked)?result.acked:[];
-      if(acked.length) await markSynced(acked);
-      if(Array.isArray(result?.errors)&&result.errors.length){
-        const first=result.errors[0];
-        throw new Error('Server rejected an entry'+(first?.error?': '+first.error:''));
-      }
-      if(!acked.length) throw new Error('Cloud API did not acknowledge the pending entries');
-      unsynced=pending();
+      syncPhase='uploading '+unsynced.length+' pending';renderSyncDiagnostics();
+      try{
+        const batch=unsynced.slice(0,20);
+        const result=await cloudRequest('/sync',{method:'POST',body:{action:'sync',events:batch},timeout:45000});
+        const acked=Array.isArray(result?.acked)?result.acked:[];
+        if(acked.length)await markSynced(acked);
+        if(Array.isArray(result?.errors)&&result.errors.length){
+          const first=result.errors[0];
+          throw new Error('Server rejected event '+String(first?.id||batch[0]?.id||'')+': '+String(first?.error||'unknown reason'));
+        }
+        if(!acked.length)throw new Error('Server did not acknowledge event '+String(batch[0]?.id||''));
+        unsynced=pending();
+      }catch(err){uploadError=err;break}
     }
-    await bootstrapRemote();
-    await deleteSynced();
-    render();
-    if(manual)setStatus(pending().length?'Some entries are still awaiting backup.':'Google backup is current and ledger data is loaded.');
+    // A rejected local event must not prevent read-only ledger refresh.
+    syncPhase='refreshing server ledger';renderSyncDiagnostics();
+    try{await bootstrapRemote()}catch(err){refreshError=err}
+    // Only acknowledged events may be deleted. Unacknowledged events are retained.
+    if(!refreshError){syncPhase='cleaning acknowledged events';await deleteSynced()}
+    if(uploadError||refreshError){
+      const messages=[];
+      if(uploadError)messages.push('Upload: '+String(uploadError.message||uploadError));
+      if(refreshError)messages.push('Ledger refresh: '+String(refreshError.message||refreshError));
+      lastSyncDiagnostic=messages.join(' | ');
+      cloudError=lastSyncDiagnostic;
+      setStatus('Sync incomplete; local entries preserved. '+lastSyncDiagnostic);
+    }else{
+      cloudError='';lastSyncDiagnostic='Ledger refreshed successfully';
+      if(manual)setStatus('Google backup is current and ledger data is loaded.');
+    }
   }catch(err){
-    cloudError=err.message||'Cloud sync failed';
-    if(manual)setStatus('Sync failed; local data is intact: '+cloudError);
-    else setStatus(cloudError==='Private sync key was rejected'?'Private sync key rejected. Open More → Sync Security and enter the correct key.':'Cloud sync unavailable; local entries remain safe. '+cloudError);
-  }finally{syncRunning=false;render()}
+    lastSyncDiagnostic='Sync failure: '+String(err.message||err);
+    cloudError=lastSyncDiagnostic;
+    setStatus('Sync incomplete; local entries preserved. '+lastSyncDiagnostic);
+  }finally{
+    syncRunning=false;syncStartedAt=0;syncPhase='idle';render();renderSyncDiagnostics();
+  }
 }
 
 async function init(){
