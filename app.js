@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='8.9.0';
+const APP_VERSION='8.9.2';
 const DEFAULT_CASINOS=['Ameristar','Boomtown Biloxi','Boomtown NOLA','Caesars NOLA','Coushatta','GN Biloxi','GN Lake Charles','Gold Strike Tunica',"Harrah's Gulf Coast",'Hollywood Gulf Coast','Hollywood Tunica','Horseshoe Lake Charles','HorseShoe Tunica','IP Biloxi',"L'Auberge BR","L'Auberge LC",'Paragon','Pearl River','Scarlet Pearl','Southland','Treasure Chest','WaterView'];
 const API=String(window.AP_CONFIG?.API_URL||'');
 let db,deviceId,baseline,localState,eventsCache=[],syncKey='';
@@ -1043,6 +1043,18 @@ function renderSyncDiagnostics(){
     line.style.cssText='margin-top:6px;overflow-wrap:anywhere';
     line.textContent=e.type+' · '+(e.amount!==''?('amount '+e.amount+' · '):'')+(e.time||'time unavailable')+' · ID '+e.id;
     el.appendChild(line);
+  }
+  // Read-only correction inspection. Never acknowledges or mutates IndexedDB.
+  const pendingCorrection=pending().find(e=>e.type==='correction'&&e.id==='031a3ecd-7efb-4b89-b955-8b9e54218725');
+  if(pendingCorrection){
+    const p=pendingCorrection.payload||{};
+    const details={eventId:pendingCorrection.id,eventTimestamp:pendingCorrection.ts||null,targetType:p.targetType??null,targetId:p.targetId??null,before:p.before??null,after:p.after??null,reason:p.reason??null};
+    const box=document.createElement('div');box.style.cssText='margin-top:12px;padding:12px;border:1px solid #49677d;border-radius:10px;overflow-wrap:anywhere';
+    const heading=document.createElement('strong');heading.textContent='PENDING CORRECTION — READ ONLY';box.appendChild(heading);
+    const pre=document.createElement('pre');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:340px;overflow:auto';pre.textContent=JSON.stringify(details,null,2);box.appendChild(pre);
+    const btn=document.createElement('button');btn.className='small';btn.textContent='COPY CORRECTION DETAILS';btn.onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(details,null,2));setStatus('Correction details copied. No ledger changes made.')}catch(err){setStatus('Copy unavailable; take a screenshot of the correction details.')}};box.appendChild(btn);
+    const note=document.createElement('div');note.style.cssText='margin-top:6px;font-size:12px';note.textContent='Diagnostic only: this panel does not retry, acknowledge, or delete the event.';box.appendChild(note);
+    el.appendChild(box);
   }
   const recovery=pending().find(e=>e.id===RECOVERY_EVENT_ID);
   if(recovery){
